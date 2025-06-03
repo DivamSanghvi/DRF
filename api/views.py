@@ -1,14 +1,17 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Greeting
+from .models import Greeting, Project
 from .controllers import get_greeting
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import UserRegistrationSerializer, UserLoginSerializer
+from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Create your views here.
 
@@ -38,7 +41,7 @@ def set_auth_cookies(response, tokens):
         'access_token',
         tokens['access'],
         httponly=True,
-        secure=True,  # for HTTPS
+        secure=False,  # Set to False for development
         samesite='Lax',
         max_age=300  # 5 minutes
     )
@@ -48,7 +51,7 @@ def set_auth_cookies(response, tokens):
         'refresh_token',
         tokens['refresh'],
         httponly=True,
-        secure=True,  # for HTTPS
+        secure=False,  # Set to False for development
         samesite='Lax',
         max_age=86400  # 24 hours
     )
@@ -120,3 +123,17 @@ class RefreshTokenView(APIView):
             return set_auth_cookies(response, tokens)
         except Exception as e:
             return Response({'error': 'Invalid refresh token'}, status=status.HTTP_400_BAD_REQUEST)
+
+class ProjectCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        logger.debug(f"ProjectCreateView - User: {request.user}")
+        logger.debug(f"ProjectCreateView - Auth: {request.auth}")
+        logger.debug(f"ProjectCreateView - Is authenticated: {request.user.is_authenticated}")
+        
+        serializer = ProjectSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

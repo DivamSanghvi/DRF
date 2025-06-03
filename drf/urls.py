@@ -22,7 +22,8 @@ from api.views import (
     UserRegistrationView, 
     UserLoginView,
     LogoutView,
-    RefreshTokenView
+    RefreshTokenView,
+    ProjectCreateView
 )
 
 urlpatterns = [
@@ -33,4 +34,5 @@ urlpatterns = [
     path('api/auth/login/', UserLoginView.as_view(), name='login'),
     path('api/auth/logout/', LogoutView.as_view(), name='logout'),
     path('api/auth/refresh/', RefreshTokenView.as_view(), name='refresh'),
+    path('api/projects/create/', ProjectCreateView.as_view(), name='project_create'),
 ]
