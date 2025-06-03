@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from datetime import datetime
+from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 # Create your models here.
 
@@ -26,7 +28,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_superuser', True)
         return self.create_user(email, password, **extra_fields)
 
-class User(AbstractBaseUser, PermissionsMixin):
+class User(AbstractUser):
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=150, null=True, blank=True)
     first_name = models.CharField(max_length=150, blank=True)
@@ -50,3 +52,26 @@ class Project(models.Model):
 
     def __str__(self):
         return self.name
+
+class Conversation(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='conversations')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    title = models.CharField(max_length=200, default="New Conversation")
+
+    def __str__(self):
+        return f"{self.title} - {self.project.name}"
+
+class Message(models.Model):
+    ROLE_CHOICES = [
+        ('user', 'User'),
+        ('assistant', 'Assistant'),
+    ]
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.role} - {self.created_at}"

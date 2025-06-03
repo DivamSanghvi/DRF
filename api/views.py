@@ -1,17 +1,21 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Greeting, Project
-from .controllers import get_greeting
+from .models import Greeting, Project, Conversation, Message
+from .controllers import get_greeting, chat
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer
+from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer, ConversationSerializer, MessageSerializer
 from datetime import datetime, timedelta
 import logging
+import jwt
+from django.conf import settings
+import json
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
 
 # Create your views here.
 
@@ -137,3 +141,67 @@ class ProjectCreateView(APIView):
             serializer.save(user=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ConversationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        """Get all conversations for a project"""
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            conversations = Conversation.objects.filter(project=project)
+            serializer = ConversationSerializer(conversations, many=True)
+            return Response(serializer.data)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def post(self, request, project_id):
+        """Create a new conversation"""
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            conversation = Conversation.objects.create(project=project)
+            serializer = ConversationSerializer(conversation)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class ConversationChatView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, project_id, conversation_id):
+        """Send a message to the AI and get response"""
+        try:
+            # Verify project belongs to user
+            project = Project.objects.get(id=project_id, user=request.user)
+            
+            # Get conversation
+            conversation = Conversation.objects.get(id=conversation_id, project=project)
+            
+            # Get message from request
+            message = request.data.get('message')
+            if not message:
+                return Response(
+                    {"error": "Message is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Send message to AI and get response
+            response = chat(conversation_id, message)
+            
+            return Response(response, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response(
+                {"error": "Project not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Conversation.DoesNotExist:
+            return Response(
+                {"error": "Conversation not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
