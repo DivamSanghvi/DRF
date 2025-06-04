@@ -13,6 +13,8 @@ import logging
 import jwt
 from django.conf import settings
 import json
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -22,6 +24,20 @@ User = get_user_model()
 class HelloWorldView(APIView):
     permission_classes = [AllowAny]
 
+    @swagger_auto_schema(
+        operation_description="Get a hello world message",
+        responses={
+            200: openapi.Response(
+                description="Success",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Hello world message')
+                    }
+                )
+            )
+        }
+    )
     def get(self, request):
         return Response({"message": "Hello, World!"})
 
@@ -65,6 +81,36 @@ def set_auth_cookies(response, tokens):
 class UserRegistrationView(APIView):
     permission_classes = (AllowAny,)
 
+    @swagger_auto_schema(
+        operation_description="Register a new user",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'password'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='User email'),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='User password')
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="User registered successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'user': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email')
+                            }
+                        ),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Bad Request"
+        }
+    )
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
         if serializer.is_valid():
@@ -82,6 +128,30 @@ class UserRegistrationView(APIView):
 class UserLoginView(APIView):
     permission_classes = (AllowAny,)
 
+    @swagger_auto_schema(
+        operation_description="Login user and get JWT tokens",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'password'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='User email'),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format='password', description='User password')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Login successful",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message')
+                    }
+                )
+            ),
+            401: "Invalid credentials",
+            400: "Bad Request"
+        }
+    )
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data)
         if serializer.is_valid():
@@ -131,6 +201,31 @@ class RefreshTokenView(APIView):
 class ProjectCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @swagger_auto_schema(
+        operation_description="Create a new project",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name'],
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description='Project name')
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Project created successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'user': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                    }
+                )
+            ),
+            400: "Bad Request"
+        }
+    )
     def post(self, request):
         logger.debug(f"ProjectCreateView - User: {request.user}")
         logger.debug(f"ProjectCreateView - Auth: {request.auth}")
@@ -145,6 +240,27 @@ class ProjectCreateView(APIView):
 class ConversationView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @swagger_auto_schema(
+        operation_description="Get all conversations for a project",
+        responses={
+            200: openapi.Response(
+                description="List of conversations",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'project': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'title': openapi.Schema(type=openapi.TYPE_STRING),
+                            'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                        }
+                    )
+                )
+            ),
+            404: "Project not found"
+        }
+    )
     def get(self, request, project_id):
         """Get all conversations for a project"""
         try:
@@ -155,6 +271,30 @@ class ConversationView(APIView):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
 
+    @swagger_auto_schema(
+        operation_description="Create a new conversation",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'title': openapi.Schema(type=openapi.TYPE_STRING, description='Conversation title')
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Conversation created successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'project': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'title': openapi.Schema(type=openapi.TYPE_STRING),
+                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                    }
+                )
+            ),
+            404: "Project not found"
+        }
+    )
     def post(self, request, project_id):
         """Create a new conversation"""
         try:
@@ -168,6 +308,48 @@ class ConversationView(APIView):
 class ConversationChatView(APIView):
     permission_classes = [IsAuthenticated]
     
+    @swagger_auto_schema(
+        operation_description="Send a message to the AI and get response",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['message'],
+            properties={
+                'message': openapi.Schema(type=openapi.TYPE_STRING, description='Message to send to AI')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Chat response",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'user_message': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'conversation': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'role': openapi.Schema(type=openapi.TYPE_STRING),
+                                'content': openapi.Schema(type=openapi.TYPE_STRING),
+                                'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                            }
+                        ),
+                        'ai_response': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'conversation': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'role': openapi.Schema(type=openapi.TYPE_STRING),
+                                'content': openapi.Schema(type=openapi.TYPE_STRING),
+                                'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                            }
+                        )
+                    }
+                )
+            ),
+            400: "Bad Request",
+            404: "Project or Conversation not found"
+        }
+    )
     def post(self, request, project_id, conversation_id):
         """Send a message to the AI and get response"""
         try:
