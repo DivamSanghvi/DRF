@@ -53,22 +53,13 @@ class Project(models.Model):
     def __str__(self):
         return self.name
 
-class Conversation(models.Model):
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='conversations')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    title = models.CharField(max_length=200, default="New Conversation")
-
-    def __str__(self):
-        return f"{self.title} - {self.project.name}"
-
 class Message(models.Model):
     ROLE_CHOICES = [
         ('user', 'User'),
         ('assistant', 'Assistant'),
     ]
 
-    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='messages')
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

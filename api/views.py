@@ -1,13 +1,13 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Greeting, Project, Conversation, Message
+from .models import Greeting, Project, Message
 from .controllers import get_greeting, chat
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer, ConversationSerializer, MessageSerializer
+from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer, MessageSerializer
 from datetime import datetime, timedelta
 import logging
 import jwt
@@ -42,6 +42,8 @@ class HelloWorldView(APIView):
         return Response({"message": "Hello, World!"})
 
 class GreetingView(APIView):
+    permission_classes = [AllowAny]
+
     def get(self, request):
         name = request.query_params.get('name', 'World')
         greeting = get_greeting(name)
@@ -237,14 +239,42 @@ class ProjectCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class ConversationView(APIView):
+class ProjectListView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Get all conversations for a project",
+        operation_description="Get all projects for the authenticated user",
         responses={
             200: openapi.Response(
-                description="List of conversations",
+                description="List of projects",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'name': openapi.Schema(type=openapi.TYPE_STRING),
+                            'user': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                        }
+                    )
+                )
+            )
+        }
+    )
+    def get(self, request):
+        projects = Project.objects.filter(user=request.user)
+        serializer = ProjectSerializer(projects, many=True)
+        return Response(serializer.data)
+
+class MessageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Get all messages for a project",
+        responses={
+            200: openapi.Response(
+                description="List of messages",
                 schema=openapi.Schema(
                     type=openapi.TYPE_ARRAY,
                     items=openapi.Schema(
@@ -252,7 +282,8 @@ class ConversationView(APIView):
                         properties={
                             'id': openapi.Schema(type=openapi.TYPE_INTEGER),
                             'project': openapi.Schema(type=openapi.TYPE_INTEGER),
-                            'title': openapi.Schema(type=openapi.TYPE_STRING),
+                            'role': openapi.Schema(type=openapi.TYPE_STRING),
+                            'content': openapi.Schema(type=openapi.TYPE_STRING),
                             'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                         }
                     )
@@ -262,52 +293,17 @@ class ConversationView(APIView):
         }
     )
     def get(self, request, project_id):
-        """Get all conversations for a project"""
         try:
             project = Project.objects.get(id=project_id, user=request.user)
-            conversations = Conversation.objects.filter(project=project)
-            serializer = ConversationSerializer(conversations, many=True)
+            messages = Message.objects.filter(project=project).order_by('created_at')
+            serializer = MessageSerializer(messages, many=True)
             return Response(serializer.data)
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    @swagger_auto_schema(
-        operation_description="Create a new conversation",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'title': openapi.Schema(type=openapi.TYPE_STRING, description='Conversation title')
-            }
-        ),
-        responses={
-            201: openapi.Response(
-                description="Conversation created successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'project': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'title': openapi.Schema(type=openapi.TYPE_STRING),
-                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
-                    }
-                )
-            ),
-            404: "Project not found"
-        }
-    )
-    def post(self, request, project_id):
-        """Create a new conversation"""
-        try:
-            project = Project.objects.get(id=project_id, user=request.user)
-            conversation = Conversation.objects.create(project=project)
-            serializer = ConversationSerializer(conversation)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        except Project.DoesNotExist:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
-
-class ConversationChatView(APIView):
+class ProjectChatView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     @swagger_auto_schema(
         operation_description="Send a message to the AI and get response",
         request_body=openapi.Schema(
@@ -327,7 +323,7 @@ class ConversationChatView(APIView):
                             type=openapi.TYPE_OBJECT,
                             properties={
                                 'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'conversation': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'project': openapi.Schema(type=openapi.TYPE_INTEGER),
                                 'role': openapi.Schema(type=openapi.TYPE_STRING),
                                 'content': openapi.Schema(type=openapi.TYPE_STRING),
                                 'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
@@ -337,7 +333,7 @@ class ConversationChatView(APIView):
                             type=openapi.TYPE_OBJECT,
                             properties={
                                 'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'conversation': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'project': openapi.Schema(type=openapi.TYPE_INTEGER),
                                 'role': openapi.Schema(type=openapi.TYPE_STRING),
                                 'content': openapi.Schema(type=openapi.TYPE_STRING),
                                 'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
@@ -347,43 +343,45 @@ class ConversationChatView(APIView):
                 )
             ),
             400: "Bad Request",
-            404: "Project or Conversation not found"
+            404: "Project not found"
         }
     )
-    def post(self, request, project_id, conversation_id):
-        """Send a message to the AI and get response"""
+    def post(self, request, project_id):
         try:
-            # Verify project belongs to user
             project = Project.objects.get(id=project_id, user=request.user)
-            
-            # Get conversation
-            conversation = Conversation.objects.get(id=conversation_id, project=project)
-            
-            # Get message from request
-            message = request.data.get('message')
-            if not message:
-                return Response(
-                    {"error": "Message is required"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Send message to AI and get response
-            response = chat(conversation_id, message)
-            
-            return Response(response, status=status.HTTP_200_OK)
-            
         except Project.DoesNotExist:
-            return Response(
-                {"error": "Project not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Conversation.DoesNotExist:
-            return Response(
-                {"error": "Conversation not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        user_message_content = request.data.get('message')
+        if not user_message_content:
+            return Response({'error': 'Message content is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create user message
+        user_message = Message.objects.create(
+            project=project,
+            role='user',
+            content=user_message_content
+        )
+
+        # Get AI response
+        try:
+            ai_response_content = chat(user_message_content)
         except Exception as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.error(f"Error getting AI response: {e}")
+            ai_response_content = "Sorry, I couldn't process your message at the moment."
+
+        # Create AI response message
+        ai_message = Message.objects.create(
+            project=project,
+            role='assistant',
+            content=ai_response_content
+        )
+
+        # Serialize and return both messages
+        user_message_serializer = MessageSerializer(user_message)
+        ai_message_serializer = MessageSerializer(ai_message)
+
+        return Response({
+            'user_message': user_message_serializer.data,
+            'ai_response': ai_message_serializer.data
+        })

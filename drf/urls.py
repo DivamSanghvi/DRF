@@ -24,8 +24,9 @@ from api.views import (
     LogoutView,
     RefreshTokenView,
     ProjectCreateView,
-    ConversationView,
-    ConversationChatView
+    ProjectListView,
+    MessageView,
+    ProjectChatView
 )
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -53,8 +54,9 @@ urlpatterns = [
     path('api/auth/logout/', LogoutView.as_view(), name='logout'),
     path('api/auth/refresh/', RefreshTokenView.as_view(), name='refresh'),
     path('api/projects/create/', ProjectCreateView.as_view(), name='project_create'),
-    path('api/projects/<int:project_id>/conversations/', ConversationView.as_view(), name='conversations'),
-    path('api/projects/<int:project_id>/conversations/<int:conversation_id>/chat/', ConversationChatView.as_view(), name='chat'),
+    path('api/projects/', ProjectListView.as_view(), name='project_list'),
+    path('api/projects/<int:project_id>/messages/', MessageView.as_view(), name='messages'),
+    path('api/projects/<int:project_id>/chat/', ProjectChatView.as_view(), name='chat'),
     
     # Swagger URLs
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
