@@ -123,10 +123,25 @@ Message.objects.all()
 | Method | Endpoint | Description | Body |
 |--------|----------|-------------|------|
 | GET | `/api/projects/{id}/messages/` | Get all messages for project | None |
-| POST | `/api/projects/{id}/chat/` | Send message to AI | `{"message": "Hello AI"}` |
+| POST | `/api/projects/{id}/chat/` | Send message to AI (streaming by default) | `{"message": "Hello AI"}` or `{"message": "Hello AI", "stream": false}` |
 | POST | `/api/projects/{id}/messages/{message_id}/like/` | Like an AI message | None |
 | POST | `/api/projects/{id}/messages/{message_id}/dislike/` | Dislike an AI message | None |
 | DELETE | `/api/projects/{id}/messages/{message_id}/reaction/` | Remove like/dislike reaction | None |
+
+#### 📡 Chat Endpoint Details
+
+**Default Behavior (Streaming):**
+- Request: `{"message": "Your question"}`
+- Response: Server-Sent Events (SSE) stream with real-time chunks
+
+**Non-Streaming Response:**
+- Request: `{"message": "Your question", "stream": false}`
+- Response: Single JSON object with user_message and ai_response
+
+**Stream Parameter Options:**
+- `stream: true` or omitted → Streaming response (SSE format)
+- `stream: false` → Traditional JSON response
+- Also accepts: `"false"`, `"0"`, `"no"`, `"off"` as false values
 
 ## 🧪 Testing with Postman
 
@@ -384,7 +399,13 @@ Warning: Only the user who created the project can delete it
 
 ### Phase 4: Chat Functionality
 
-#### Test 4.1: Send First Message to AI
+⚠️ **Important: Streaming is the default behavior for chat responses!**
+
+The chat endpoint supports two modes:
+- **Streaming (Default)**: Real-time response chunks via Server-Sent Events (SSE)
+- **Non-Streaming**: Traditional single JSON response
+
+#### Test 4.1: Send Message with Default Streaming
 ```
 Method: POST
 URL: {{base_url}}/api/projects/1/chat/
@@ -397,7 +418,62 @@ Body (JSON):
     "message": "Hello AI, how are you?"
 }
 
-Expected Response (200):
+Expected Response (Streaming - SSE format):
+data: {"chunk": "Hello"}
+
+data: {"chunk": "! I'm"}
+
+data: {"chunk": " doing"}
+
+data: {"chunk": " well,"}
+
+data: {"chunk": " thank"}
+
+data: {"chunk": " you"}
+
+data: {"chunk": " for"}
+
+data: {"chunk": " asking"}
+
+data: {"chunk": "..."}
+
+data: {"done": true, "message": {"id": 2, "project": 1, "role": "assistant", "content": "Hello! I'm doing well, thank you for asking...", "liked": null, "created_at": "2025-06-04T18:31:01.123456Z"}}
+
+Note: Response is streamed in real-time as chunks
+```
+
+#### Test 4.1b: Send Message with Explicit Streaming
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/chat/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "message": "Hello AI, how are you?",
+    "stream": true
+}
+
+Expected Response: Same as above (streaming format)
+```
+
+#### Test 4.1c: Send Message with Non-Streaming Response
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/chat/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "message": "Hello AI, how are you?",
+    "stream": false
+}
+
+Expected Response (200 - Single JSON):
 {
     "user_message": {
         "id": 1,
@@ -418,7 +494,42 @@ Expected Response (200):
 }
 ```
 
-#### Test 4.2: Send Another Message
+#### 📡 How to Consume Streaming Responses
+
+**JavaScript (EventSource API):**
+```javascript
+// For streaming responses
+const eventSource = new EventSource('/api/projects/1/chat/');
+
+eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    
+    if (data.chunk) {
+        // Handle streaming chunk
+        console.log('Received chunk:', data.chunk);
+        // Append to your UI in real-time
+    } else if (data.done) {
+        // Handle complete message
+        console.log('Complete message:', data.message);
+        eventSource.close();
+    } else if (data.error) {
+        // Handle error
+        console.error('Error:', data.error);
+        eventSource.close();
+    }
+};
+
+eventSource.onerror = (error) => {
+    console.error('EventSource error:', error);
+    eventSource.close();
+};
+```
+
+**Postman Testing:**
+- **Streaming**: You'll see multiple lines of SSE data in the response
+- **Non-Streaming**: You'll see a single JSON object response
+
+#### Test 4.2: Send Another Message (Streaming)
 ```
 Method: POST
 URL: {{base_url}}/api/projects/1/chat/
@@ -431,25 +542,28 @@ Body (JSON):
     "message": "What can you help me with?"
 }
 
-Expected Response (200):
-{
-    "user_message": {
-        "id": 3,
-        "project": 1,
-        "role": "user",
-        "content": "What can you help me with?",
-        "liked": null,
-        "created_at": "2025-06-04T18:32:00.123456Z"
-    },
-    "ai_response": {
-        "id": 4,
-        "project": 1,
-        "role": "assistant",
-        "content": "I can help you with a variety of tasks...",
-        "liked": null,
-        "created_at": "2025-06-04T18:32:01.123456Z"
-    }
-}
+Expected Response (Streaming - SSE format):
+data: {"chunk": "I"}
+
+data: {"chunk": " can"}
+
+data: {"chunk": " help"}
+
+data: {"chunk": " you"}
+
+data: {"chunk": " with"}
+
+data: {"chunk": " a"}
+
+data: {"chunk": " variety"}
+
+data: {"chunk": " of"}
+
+data: {"chunk": " tasks..."}
+
+data: {"done": true, "message": {"id": 4, "project": 1, "role": "assistant", "content": "I can help you with a variety of tasks...", "liked": null, "created_at": "2025-06-04T18:32:01.123456Z"}}
+
+Note: Response is streamed in real-time as chunks
 ```
 
 #### Test 4.3: Get All Messages for Project

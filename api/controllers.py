@@ -16,7 +16,7 @@ genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 def get_greeting(name):
     return f"Hello, {name}! Welcome to the DRF MVC project."
 
-def chat(message: str) -> str:
+def chat(message: str, stream: bool = False) -> str:
     """Send a message to the AI and get response"""
     try:
         # Get AI response using gemini-1.5-flash
@@ -33,9 +33,17 @@ def chat(message: str) -> str:
 Please maintain this style throughout our conversation."""
         
         chat_session = model.start_chat(history=[])
-        response = chat_session.send_message(f"{system_message}\n\nUser: {message}")
         
-        return response.text
+        if stream:
+            # Return the streaming response
+            return chat_session.send_message(
+                f"{system_message}\n\nUser: {message}",
+                stream=True
+            )
+        else:
+            # Return the complete response as text
+            response = chat_session.send_message(f"{system_message}\n\nUser: {message}")
+            return response.text
         
     except Exception as e:
         return f"Error getting AI response: {str(e)}" 

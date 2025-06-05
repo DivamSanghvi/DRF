@@ -15,6 +15,7 @@ from django.conf import settings
 import json
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from django.http import StreamingHttpResponse
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -501,7 +502,8 @@ class ProjectChatView(APIView):
             type=openapi.TYPE_OBJECT,
             required=['message'],
             properties={
-                'message': openapi.Schema(type=openapi.TYPE_STRING, description='Message to send to AI')
+                'message': openapi.Schema(type=openapi.TYPE_STRING, description='Message to send to AI'),
+                'stream': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Whether to stream the response', default=True)
             }
         ),
         responses={
@@ -556,25 +558,83 @@ class ProjectChatView(APIView):
             content=user_message_content
         )
 
-        # Get AI response
-        try:
-            ai_response_content = chat(user_message_content)
-        except Exception as e:
-            logger.error(f"Error getting AI response: {e}")
-            ai_response_content = "Sorry, I couldn't process your message at the moment."
+        # Handle streaming logic - handle both boolean and string values
+        stream_param = request.data.get('stream')
+        
+        if stream_param is None:
+            # No stream parameter provided - default to streaming
+            should_stream = True
+        elif isinstance(stream_param, bool):
+            # Boolean value provided
+            should_stream = stream_param
+        elif isinstance(stream_param, str):
+            # String value provided - convert properly
+            should_stream = stream_param.lower() not in ['false', '0', 'no', 'off']
+        else:
+            # Other types - convert to boolean
+            should_stream = bool(stream_param)
 
-        # Create AI response message
-        ai_message = Message.objects.create(
-            project=project,
-            role='assistant',
-            content=ai_response_content
-        )
+        if should_stream:
+            def event_stream():
+                try:
+                    # Get streaming response from AI
+                    stream = chat(user_message_content, stream=True)
+                    
+                    # Initialize empty content for the AI message
+                    ai_message = Message.objects.create(
+                        project=project,
+                        role='assistant',
+                        content=''
+                    )
+                    
+                    # Stream each chunk
+                    full_response = ''
+                    for chunk in stream:
+                        if chunk.text:
+                            full_response += chunk.text
+                            # Update the message content
+                            ai_message.content = full_response
+                            ai_message.save()
+                            
+                            # Send the chunk as an SSE
+                            yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
+                    
+                    # Send the final message data
+                    ai_message_serializer = MessageSerializer(ai_message)
+                    yield f"data: {json.dumps({'done': True, 'message': ai_message_serializer.data})}\n\n"
+                    
+                except Exception as e:
+                    logger.error(f"Error in streaming response: {e}")
+                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-        # Serialize and return both messages
-        user_message_serializer = MessageSerializer(user_message)
-        ai_message_serializer = MessageSerializer(ai_message)
+            response = StreamingHttpResponse(
+                event_stream(),
+                content_type='text/event-stream'
+            )
+            response['Cache-Control'] = 'no-cache'
+            response['X-Accel-Buffering'] = 'no'
+            return response
 
-        return Response({
-            'user_message': user_message_serializer.data,
-            'ai_response': ai_message_serializer.data
-        })
+        else:
+            # Get AI response (non-streaming)
+            try:
+                ai_response_content = chat(user_message_content, stream=False)
+            except Exception as e:
+                logger.error(f"Error getting AI response: {e}")
+                ai_response_content = "Sorry, I couldn't process your message at the moment."
+
+            # Create AI response message
+            ai_message = Message.objects.create(
+                project=project,
+                role='assistant',
+                content=ai_response_content
+            )
+
+            # Serialize and return both messages
+            user_message_serializer = MessageSerializer(user_message)
+            ai_message_serializer = MessageSerializer(ai_message)
+
+            return Response({
+                'user_message': user_message_serializer.data,
+                'ai_response': ai_message_serializer.data
+            })
