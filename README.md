@@ -127,6 +127,17 @@ Message.objects.all()
 | POST | `/api/projects/{id}/messages/{message_id}/like/` | Like an AI message | None |
 | POST | `/api/projects/{id}/messages/{message_id}/dislike/` | Dislike an AI message | None |
 | DELETE | `/api/projects/{id}/messages/{message_id}/reaction/` | Remove like/dislike reaction | None |
+| POST | `/api/projects/{id}/messages/{message_id}/feedback/` | Add feedback to an AI message | `{"feedback": "This was helpful!"}` |
+| PUT | `/api/projects/{id}/messages/{message_id}/feedback/update/` | Update feedback on an AI message | `{"feedback": "Updated feedback text"}` |
+| DELETE | `/api/projects/{id}/messages/{message_id}/feedback/remove/` | Remove feedback from an AI message | None |
+
+### 📄 Resource Endpoints (Authentication Required)
+
+| Method | Endpoint | Description | Body |
+|--------|----------|-------------|------|
+| GET | `/api/projects/{id}/resources/` | Get all PDF resources for project | None |
+| POST | `/api/projects/{id}/resources/upload/` | Upload PDF resource for RAG | Form-data with `pdf_file` |
+| DELETE | `/api/projects/{id}/resources/{resource_id}/delete/` | Delete PDF resource | None |
 
 #### 📡 Chat Endpoint Details
 
@@ -611,8 +622,6 @@ Expected Response (200):
 ]
 ```
 
-### Phase 4.5: Message Reactions (Like/Dislike)
-
 #### Test 4.4: Like an AI Message
 ```
 Method: POST
@@ -718,6 +727,291 @@ Body: None
 Expected Response (400):
 {
     "error": "Only AI messages can be liked"
+}
+```
+
+### Phase 4.6: Message Feedback
+
+#### Test 4.9: Add Feedback to AI Message
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/messages/2/feedback/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "feedback": "This response was very helpful and detailed!"
+}
+
+Expected Response (200):
+{
+    "message": "Feedback added successfully",
+    "user_feedback_message": "This response was very helpful and detailed!"
+}
+
+Note: Only AI messages (role='assistant') can receive feedback
+```
+
+#### Test 4.10: Update Feedback on AI Message
+```
+Method: PUT
+URL: {{base_url}}/api/projects/1/messages/2/feedback/update/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "feedback": "Updated: This response was extremely helpful and very detailed!"
+}
+
+Expected Response (200):
+{
+    "message": "Feedback updated successfully",
+    "user_feedback_message": "Updated: This response was extremely helpful and very detailed!"
+}
+```
+
+#### Test 4.11: Remove Feedback from AI Message
+```
+Method: DELETE
+URL: {{base_url}}/api/projects/1/messages/2/feedback/remove/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+{
+    "message": "Feedback removed successfully",
+    "user_feedback_message": null
+}
+```
+
+#### Test 4.12: Try to Add Feedback to User Message (Error Case)
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/messages/1/feedback/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "feedback": "This shouldn't work"
+}
+
+Expected Response (400):
+{
+    "error": "Only AI messages can receive feedback"
+}
+```
+
+#### Test 4.13: Try to Add Feedback When Feedback Already Exists (Error Case)
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/messages/4/feedback/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "feedback": "First feedback"
+}
+
+Expected Response (200):
+{
+    "message": "Feedback added successfully",
+    "user_feedback_message": "First feedback"
+}
+
+# Then try to add again
+Method: POST
+URL: {{base_url}}/api/projects/1/messages/4/feedback/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "feedback": "Second feedback"
+}
+
+Expected Response (400):
+{
+    "error": "Feedback already exists. Use update endpoint to modify."
+}
+```
+
+#### Test 4.14: Verify Feedback in Message List
+```
+Method: GET
+URL: {{base_url}}/api/projects/1/messages/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+[
+    {
+        "id": 1,
+        "project": 1,
+        "role": "user",
+        "content": "Hello AI, how are you?",
+        "liked": null,
+        "user_feedback_message": null,
+        "created_at": "2025-06-04T18:31:00.123456Z"
+    },
+    {
+        "id": 2,
+        "project": 1,
+        "role": "assistant",
+        "content": "Hello! I'm doing well, thank you for asking...",
+        "liked": null,
+        "user_feedback_message": null,
+        "created_at": "2025-06-04T18:31:01.123456Z"
+    },
+    {
+        "id": 3,
+        "project": 1,
+        "role": "user",
+        "content": "What can you help me with?",
+        "liked": null,
+        "user_feedback_message": null,
+        "created_at": "2025-06-04T18:32:00.123456Z"
+    },
+    {
+        "id": 4,
+        "project": 1,
+        "role": "assistant",
+        "content": "I can help you with a variety of tasks...",
+        "liked": false,
+        "user_feedback_message": "First feedback",
+        "created_at": "2025-06-04T18:32:01.123456Z"
+    }
+]
+
+Note: Message 2 feedback was removed (null), Message 4 has feedback
+```
+
+### Phase 4.7: Resource Management (PDF RAG)
+
+#### Test 4.15: Get Project Resources (Initially Empty)
+```
+Method: GET
+URL: {{base_url}}/api/projects/1/resources/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+[]
+
+Note: Initially empty array since no resources have been uploaded yet
+```
+
+#### Test 4.16: Upload PDF Resource
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/resources/upload/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: Form-data
+pdf_file: [Select a PDF file]
+
+Expected Response (201):
+{
+    "id": 1,
+    "user": 1,
+    "project": 1,
+    "pdf_file": "/media/resources/pdfs/your_file.pdf",
+    "created_at": "2025-06-05T02:45:00.123456Z"
+}
+
+Note: Use form-data, not JSON. Select a PDF file for the pdf_file field.
+```
+
+#### Test 4.17: Get Project Resources (After Upload)
+```
+Method: GET
+URL: {{base_url}}/api/projects/1/resources/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+[
+    {
+        "id": 1,
+        "user": 1,
+        "project": 1,
+        "pdf_file": "/media/resources/pdfs/your_file.pdf",
+        "created_at": "2025-06-05T02:45:00.123456Z"
+    }
+]
+
+Note: Shows the uploaded PDF resource in the list
+```
+
+#### Test 4.18: Try to Upload Non-PDF File (Error Case)
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/resources/upload/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: Form-data
+pdf_file: [Select a non-PDF file like .txt or .jpg]
+
+Expected Response (400):
+{
+    "error": "Only PDF files are allowed"
+}
+```
+
+#### Test 4.19: Try to Upload Without File (Error Case)
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/resources/upload/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: Form-data
+(no pdf_file field)
+
+Expected Response (400):
+{
+    "error": "PDF file is required"
+}
+```
+
+#### Test 4.20: Delete PDF Resource
+```
+Method: DELETE
+URL: {{base_url}}/api/projects/1/resources/1/delete/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+{
+    "message": "Resource deleted successfully"
+}
+
+Note: Replace "1" with the actual resource ID from the upload response
+```
+
+#### Test 4.21: Try to Delete Non-existent Resource (Error Case)
+```
+Method: DELETE
+URL: {{base_url}}/api/projects/1/resources/999/delete/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (404):
+{
+    "error": "Resource not found"
 }
 ```
 
@@ -941,8 +1235,11 @@ POST /api/auth/refresh/
 - [ ] ✅ User logout works
 - [ ] ✅ Project creation works
 - [ ] ✅ Project listing works
-- [ ] ✅ AI chat works
+- [ ] ✅ AI chat works (streaming and non-streaming)
 - [ ] ✅ Message retrieval works
+- [ ] ✅ Message like/dislike functionality works
+- [ ] ✅ Message feedback functionality works (add/update/remove)
+- [ ] ✅ PDF resource upload and delete functionality works
 - [ ] ✅ Multiple projects work independently
 - [ ] ✅ Authentication errors handled properly
 - [ ] ✅ 404 errors handled properly
