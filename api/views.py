@@ -351,6 +351,7 @@ class MessageView(APIView):
                             'project': openapi.Schema(type=openapi.TYPE_INTEGER),
                             'role': openapi.Schema(type=openapi.TYPE_STRING),
                             'content': openapi.Schema(type=openapi.TYPE_STRING),
+                            'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True=liked, False=disliked, null=no action'),
                             'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                         }
                     )
@@ -367,6 +368,129 @@ class MessageView(APIView):
             return Response(serializer.data)
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class MessageLikeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Like an AI message",
+        responses={
+            200: openapi.Response(
+                description="Message liked successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Current like status')
+                    }
+                )
+            ),
+            400: "Cannot like user messages",
+            404: "Message or project not found"
+        }
+    )
+    def post(self, request, project_id, message_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            message = Message.objects.get(id=message_id, project=project)
+            
+            if message.role != 'assistant':
+                return Response({'error': 'Only AI messages can be liked'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            message.liked = True
+            message.save()
+            
+            return Response({
+                'message': 'Message liked successfully',
+                'liked': message.liked
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class MessageDislikeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Dislike an AI message",
+        responses={
+            200: openapi.Response(
+                description="Message disliked successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Current like status')
+                    }
+                )
+            ),
+            400: "Cannot dislike user messages",
+            404: "Message or project not found"
+        }
+    )
+    def post(self, request, project_id, message_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            message = Message.objects.get(id=message_id, project=project)
+            
+            if message.role != 'assistant':
+                return Response({'error': 'Only AI messages can be disliked'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            message.liked = False
+            message.save()
+            
+            return Response({
+                'message': 'Message disliked successfully',
+                'liked': message.liked
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class MessageRemoveReactionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Remove like/dislike reaction from an AI message",
+        responses={
+            200: openapi.Response(
+                description="Reaction removed successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'liked': openapi.Schema(type=openapi.TYPE_STRING, description='Current like status (null)')
+                    }
+                )
+            ),
+            400: "Cannot remove reaction from user messages",
+            404: "Message or project not found"
+        }
+    )
+    def delete(self, request, project_id, message_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            message = Message.objects.get(id=message_id, project=project)
+            
+            if message.role != 'assistant':
+                return Response({'error': 'Only AI messages can have reactions removed'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            message.liked = None
+            message.save()
+            
+            return Response({
+                'message': 'Reaction removed successfully',
+                'liked': message.liked
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
 
 class ProjectChatView(APIView):
     permission_classes = [IsAuthenticated]
@@ -393,6 +517,7 @@ class ProjectChatView(APIView):
                                 'project': openapi.Schema(type=openapi.TYPE_INTEGER),
                                 'role': openapi.Schema(type=openapi.TYPE_STRING),
                                 'content': openapi.Schema(type=openapi.TYPE_STRING),
+                                'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Always null for user messages'),
                                 'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                             }
                         ),
@@ -403,6 +528,7 @@ class ProjectChatView(APIView):
                                 'project': openapi.Schema(type=openapi.TYPE_INTEGER),
                                 'role': openapi.Schema(type=openapi.TYPE_STRING),
                                 'content': openapi.Schema(type=openapi.TYPE_STRING),
+                                'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True=liked, False=disliked, null=no action'),
                                 'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                             }
                         )

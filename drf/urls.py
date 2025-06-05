@@ -28,6 +28,9 @@ from api.views import (
     ProjectUpdateView,
     ProjectDeleteView,
     MessageView,
+    MessageLikeView,
+    MessageDislikeView,
+    MessageRemoveReactionView,
     ProjectChatView
 )
 from rest_framework import permissions
@@ -60,6 +63,9 @@ urlpatterns = [
     path('api/projects/<int:project_id>/update/', ProjectUpdateView.as_view(), name='project_update'),
     path('api/projects/<int:project_id>/delete/', ProjectDeleteView.as_view(), name='project_delete'),
     path('api/projects/<int:project_id>/messages/', MessageView.as_view(), name='messages'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/like/', MessageLikeView.as_view(), name='message_like'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/dislike/', MessageDislikeView.as_view(), name='message_dislike'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/reaction/', MessageRemoveReactionView.as_view(), name='message_remove_reaction'),
     path('api/projects/<int:project_id>/chat/', ProjectChatView.as_view(), name='chat'),
     
     # Swagger URLs

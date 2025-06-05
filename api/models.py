@@ -62,6 +62,7 @@ class Message(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='messages')
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     content = models.TextField()
+    liked = models.BooleanField(null=True, blank=True, default=None, help_text="True=liked, False=disliked, None=no action")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
