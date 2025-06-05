@@ -115,6 +115,8 @@ Message.objects.all()
 |--------|----------|-------------|------|
 | POST | `/api/projects/create/` | Create new project | `{"name": "My Project"}` |
 | GET | `/api/projects/` | List all user projects | None |
+| PUT | `/api/projects/{id}/update/` | Update existing project | `{"name": "Updated Project Name"}` |
+| DELETE | `/api/projects/{id}/delete/` | Delete project | None |
 
 ### 💬 Message/Chat Endpoints (Authentication Required)
 
@@ -334,6 +336,47 @@ Expected Response (200):
         "created_at": "2025-06-04T18:30:00.123456Z"
     }
 ]
+```
+
+#### Test 3.4: Update Project
+```
+Method: PUT
+URL: {{base_url}}/api/projects/1/update/
+Headers:
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+Body (JSON):
+{
+    "name": "Updated AI Chat Project"
+}
+
+Expected Response (200):
+{
+    "id": 1,
+    "name": "Updated AI Chat Project",
+    "user": 1,
+    "created_at": "2025-06-04T18:30:00.123456Z"
+}
+
+Note: Only the user who created the project can update it
+```
+
+#### Test 3.5: Delete Project
+```
+Method: DELETE
+URL: {{base_url}}/api/projects/1/delete/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+{
+    "message": "Project deleted successfully"
+}
+
+Note: This permanently deletes the project and all its messages
+Warning: Only the user who created the project can delete it
 ```
 
 ### Phase 4: Chat Functionality
