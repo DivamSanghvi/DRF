@@ -124,6 +124,9 @@ Message.objects.all()
 |--------|----------|-------------|------|
 | GET | `/api/projects/{id}/messages/` | Get all messages for project | None |
 | POST | `/api/projects/{id}/chat/` | Send message to AI | `{"message": "Hello AI"}` |
+| POST | `/api/projects/{id}/messages/{message_id}/like/` | Like an AI message | None |
+| POST | `/api/projects/{id}/messages/{message_id}/dislike/` | Dislike an AI message | None |
+| DELETE | `/api/projects/{id}/messages/{message_id}/reaction/` | Remove like/dislike reaction | None |
 
 ## 🧪 Testing with Postman
 
@@ -401,6 +404,7 @@ Expected Response (200):
         "project": 1,
         "role": "user",
         "content": "Hello AI, how are you?",
+        "liked": null,
         "created_at": "2025-06-04T18:31:00.123456Z"
     },
     "ai_response": {
@@ -408,6 +412,7 @@ Expected Response (200):
         "project": 1,
         "role": "assistant",
         "content": "Hello! I'm doing well, thank you for asking...",
+        "liked": null,
         "created_at": "2025-06-04T18:31:01.123456Z"
     }
 }
@@ -433,6 +438,7 @@ Expected Response (200):
         "project": 1,
         "role": "user",
         "content": "What can you help me with?",
+        "liked": null,
         "created_at": "2025-06-04T18:32:00.123456Z"
     },
     "ai_response": {
@@ -440,6 +446,7 @@ Expected Response (200):
         "project": 1,
         "role": "assistant",
         "content": "I can help you with a variety of tasks...",
+        "liked": null,
         "created_at": "2025-06-04T18:32:01.123456Z"
     }
 }
@@ -460,6 +467,7 @@ Expected Response (200):
         "project": 1,
         "role": "user",
         "content": "Hello AI, how are you?",
+        "liked": null,
         "created_at": "2025-06-04T18:31:00.123456Z"
     },
     {
@@ -467,6 +475,7 @@ Expected Response (200):
         "project": 1,
         "role": "assistant",
         "content": "Hello! I'm doing well, thank you for asking...",
+        "liked": null,
         "created_at": "2025-06-04T18:31:01.123456Z"
     },
     {
@@ -474,6 +483,7 @@ Expected Response (200):
         "project": 1,
         "role": "user",
         "content": "What can you help me with?",
+        "liked": null,
         "created_at": "2025-06-04T18:32:00.123456Z"
     },
     {
@@ -481,9 +491,120 @@ Expected Response (200):
         "project": 1,
         "role": "assistant",
         "content": "I can help you with a variety of tasks...",
+        "liked": null,
         "created_at": "2025-06-04T18:32:01.123456Z"
     }
 ]
+```
+
+### Phase 4.5: Message Reactions (Like/Dislike)
+
+#### Test 4.4: Like an AI Message
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/messages/2/like/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+{
+    "message": "Message liked successfully",
+    "liked": true
+}
+
+Note: Only AI messages (role='assistant') can be liked/disliked
+```
+
+#### Test 4.5: Dislike an AI Message
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/messages/4/dislike/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+{
+    "message": "Message disliked successfully",
+    "liked": false
+}
+```
+
+#### Test 4.6: Remove Reaction from AI Message
+```
+Method: DELETE
+URL: {{base_url}}/api/projects/1/messages/2/reaction/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+{
+    "message": "Reaction removed successfully",
+    "liked": null
+}
+```
+
+#### Test 4.7: Verify Reactions in Message List
+```
+Method: GET
+URL: {{base_url}}/api/projects/1/messages/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (200):
+[
+    {
+        "id": 1,
+        "project": 1,
+        "role": "user",
+        "content": "Hello AI, how are you?",
+        "liked": null,
+        "created_at": "2025-06-04T18:31:00.123456Z"
+    },
+    {
+        "id": 2,
+        "project": 1,
+        "role": "assistant",
+        "content": "Hello! I'm doing well, thank you for asking...",
+        "liked": null,
+        "created_at": "2025-06-04T18:31:01.123456Z"
+    },
+    {
+        "id": 3,
+        "project": 1,
+        "role": "user",
+        "content": "What can you help me with?",
+        "liked": null,
+        "created_at": "2025-06-04T18:32:00.123456Z"
+    },
+    {
+        "id": 4,
+        "project": 1,
+        "role": "assistant",
+        "content": "I can help you with a variety of tasks...",
+        "liked": false,
+        "created_at": "2025-06-04T18:32:01.123456Z"
+    }
+]
+
+Note: Message 2 reaction was removed (null), Message 4 is disliked (false)
+```
+
+#### Test 4.8: Try to Like User Message (Error Case)
+```
+Method: POST
+URL: {{base_url}}/api/projects/1/messages/1/like/
+Headers:
+Authorization: Bearer {{access_token}}
+Body: None
+
+Expected Response (400):
+{
+    "error": "Only AI messages can be liked"
+}
 ```
 
 ### Phase 5: Multiple Projects Testing
