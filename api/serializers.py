@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import User, Project, Message
+from .models import User, Project, Message, Resource
 
 User = get_user_model()
 
@@ -39,5 +39,11 @@ class ProjectSerializer(serializers.ModelSerializer):
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
-        fields = ('id', 'project', 'role', 'content', 'liked', 'created_at')
-        read_only_fields = ('created_at',) 
+        fields = ('id', 'project', 'role', 'content', 'liked', 'user_feedback_message', 'created_at')
+        read_only_fields = ('created_at',)
+
+class ResourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resource
+        fields = ('id', 'user', 'project', 'pdf_file', 'created_at')
+        read_only_fields = ('user', 'created_at') 

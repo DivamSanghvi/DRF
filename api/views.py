@@ -1,13 +1,13 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import Greeting, Project, Message
+from .models import Greeting, Project, Message, Resource
 from .controllers import get_greeting, chat
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer, MessageSerializer
+from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer, MessageSerializer, ResourceSerializer
 from datetime import datetime, timedelta
 import logging
 import jwt
@@ -353,6 +353,7 @@ class MessageView(APIView):
                             'role': openapi.Schema(type=openapi.TYPE_STRING),
                             'content': openapi.Schema(type=openapi.TYPE_STRING),
                             'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True=liked, False=disliked, null=no action'),
+                            'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='User feedback on AI messages'),
                             'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                         }
                     )
@@ -493,6 +494,157 @@ class MessageRemoveReactionView(APIView):
         except Message.DoesNotExist:
             return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
 
+class MessageAddFeedbackView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Add feedback to an AI message",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['feedback'],
+            properties={
+                'feedback': openapi.Schema(type=openapi.TYPE_STRING, description='User feedback message')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Feedback added successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='The feedback message')
+                    }
+                )
+            ),
+            400: "Cannot add feedback to user messages or feedback already exists",
+            404: "Message or project not found"
+        }
+    )
+    def post(self, request, project_id, message_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            message = Message.objects.get(id=message_id, project=project)
+            
+            if message.role != 'assistant':
+                return Response({'error': 'Only AI messages can receive feedback'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            feedback_text = request.data.get('feedback')
+            if not feedback_text:
+                return Response({'error': 'Feedback text is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if message.user_feedback_message:
+                return Response({'error': 'Feedback already exists. Use update endpoint to modify.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            message.user_feedback_message = feedback_text
+            message.save()
+            
+            return Response({
+                'message': 'Feedback added successfully',
+                'user_feedback_message': message.user_feedback_message
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class MessageUpdateFeedbackView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Update feedback on an AI message",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['feedback'],
+            properties={
+                'feedback': openapi.Schema(type=openapi.TYPE_STRING, description='Updated user feedback message')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Feedback updated successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='The updated feedback message')
+                    }
+                )
+            ),
+            400: "Cannot update feedback on user messages or no feedback exists",
+            404: "Message or project not found"
+        }
+    )
+    def put(self, request, project_id, message_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            message = Message.objects.get(id=message_id, project=project)
+            
+            if message.role != 'assistant':
+                return Response({'error': 'Only AI messages can receive feedback'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            feedback_text = request.data.get('feedback')
+            if not feedback_text:
+                return Response({'error': 'Feedback text is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not message.user_feedback_message:
+                return Response({'error': 'No existing feedback to update. Use add endpoint first.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            message.user_feedback_message = feedback_text
+            message.save()
+            
+            return Response({
+                'message': 'Feedback updated successfully',
+                'user_feedback_message': message.user_feedback_message
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class MessageRemoveFeedbackView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Remove feedback from an AI message",
+        responses={
+            200: openapi.Response(
+                description="Feedback removed successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Current feedback status (null)')
+                    }
+                )
+            ),
+            400: "Cannot remove feedback from user messages",
+            404: "Message or project not found"
+        }
+    )
+    def delete(self, request, project_id, message_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            message = Message.objects.get(id=message_id, project=project)
+            
+            if message.role != 'assistant':
+                return Response({'error': 'Only AI messages can have feedback removed'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            message.user_feedback_message = None
+            message.save()
+            
+            return Response({
+                'message': 'Feedback removed successfully',
+                'user_feedback_message': message.user_feedback_message
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+
 class ProjectChatView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -520,6 +672,7 @@ class ProjectChatView(APIView):
                                 'role': openapi.Schema(type=openapi.TYPE_STRING),
                                 'content': openapi.Schema(type=openapi.TYPE_STRING),
                                 'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Always null for user messages'),
+                                'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Always null for user messages'),
                                 'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                             }
                         ),
@@ -531,6 +684,7 @@ class ProjectChatView(APIView):
                                 'role': openapi.Schema(type=openapi.TYPE_STRING),
                                 'content': openapi.Schema(type=openapi.TYPE_STRING),
                                 'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True=liked, False=disliked, null=no action'),
+                                'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='User feedback on AI messages'),
                                 'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                             }
                         )
@@ -638,3 +792,128 @@ class ProjectChatView(APIView):
                 'user_message': user_message_serializer.data,
                 'ai_response': ai_message_serializer.data
             })
+
+class ResourceAddView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Add a PDF resource to a project",
+        manual_parameters=[
+            openapi.Parameter('project_id', openapi.IN_PATH, description="Project ID", type=openapi.TYPE_INTEGER),
+        ],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['pdf_file'],
+            properties={
+                'pdf_file': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_BINARY, description='PDF file to upload')
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="Resource added successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'user': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'project': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'pdf_file': openapi.Schema(type=openapi.TYPE_STRING, description='File URL'),
+                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                    }
+                )
+            ),
+            400: "Bad Request",
+            404: "Project not found"
+        }
+    )
+    def post(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Validate file upload
+        if 'pdf_file' not in request.FILES:
+            return Response({'error': 'PDF file is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        uploaded_file = request.FILES['pdf_file']
+        if not uploaded_file.name.lower().endswith('.pdf'):
+            return Response({'error': 'Only PDF files are allowed'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create resource
+        resource = Resource.objects.create(
+            user=request.user,
+            project=project,
+            pdf_file=uploaded_file
+        )
+        
+        serializer = ResourceSerializer(resource)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+class ResourceListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Get all PDF resources for a project",
+        responses={
+            200: openapi.Response(
+                description="List of resources",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'user': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'project': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'pdf_file': openapi.Schema(type=openapi.TYPE_STRING, description='File URL'),
+                            'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                        }
+                    )
+                )
+            ),
+            404: "Project not found"
+        }
+    )
+    def get(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            resources = Resource.objects.filter(project=project, user=request.user).order_by('-created_at')
+            serializer = ResourceSerializer(resources, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class ResourceDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Delete a PDF resource",
+        responses={
+            200: openapi.Response(
+                description="Resource deleted successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message')
+                    }
+                )
+            ),
+            404: "Resource not found"
+        }
+    )
+    def delete(self, request, project_id, resource_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            resource = Resource.objects.get(id=resource_id, project=project, user=request.user)
+            
+            # Delete the actual file
+            if resource.pdf_file:
+                resource.pdf_file.delete()
+            
+            resource.delete()
+            return Response({'message': 'Resource deleted successfully'}, status=status.HTTP_200_OK)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Resource.DoesNotExist:
+            return Response({'error': 'Resource not found'}, status=status.HTTP_404_NOT_FOUND)

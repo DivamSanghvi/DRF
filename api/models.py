@@ -63,7 +63,17 @@ class Message(models.Model):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     content = models.TextField()
     liked = models.BooleanField(null=True, blank=True, default=None, help_text="True=liked, False=disliked, None=no action")
+    user_feedback_message = models.TextField(null=True, blank=True, help_text="User feedback on AI messages")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.role} - {self.created_at}"
+
+class Resource(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='resources')
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='resources')
+    pdf_file = models.FileField(upload_to='resources/pdfs/', help_text="PDF file for RAG functionality")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Resource {self.id} - {self.project.name}"

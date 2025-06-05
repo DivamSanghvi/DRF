@@ -16,6 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, re_path
+from django.conf import settings
+from django.conf.urls.static import static
 from api.views import (
     GreetingView, 
     HelloWorldView, 
@@ -31,7 +33,13 @@ from api.views import (
     MessageLikeView,
     MessageDislikeView,
     MessageRemoveReactionView,
-    ProjectChatView
+    MessageAddFeedbackView,
+    MessageUpdateFeedbackView,
+    MessageRemoveFeedbackView,
+    ProjectChatView,
+    ResourceAddView,
+    ResourceListView,
+    ResourceDeleteView
 )
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -66,10 +74,19 @@ urlpatterns = [
     path('api/projects/<int:project_id>/messages/<int:message_id>/like/', MessageLikeView.as_view(), name='message_like'),
     path('api/projects/<int:project_id>/messages/<int:message_id>/dislike/', MessageDislikeView.as_view(), name='message_dislike'),
     path('api/projects/<int:project_id>/messages/<int:message_id>/reaction/', MessageRemoveReactionView.as_view(), name='message_remove_reaction'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/', MessageAddFeedbackView.as_view(), name='message_add_feedback'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/update/', MessageUpdateFeedbackView.as_view(), name='message_update_feedback'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/remove/', MessageRemoveFeedbackView.as_view(), name='message_remove_feedback'),
     path('api/projects/<int:project_id>/chat/', ProjectChatView.as_view(), name='chat'),
+    path('api/projects/<int:project_id>/resources/', ResourceListView.as_view(), name='resource_list'),
+    path('api/projects/<int:project_id>/resources/upload/', ResourceAddView.as_view(), name='resource_add'),
+    path('api/projects/<int:project_id>/resources/<int:resource_id>/delete/', ResourceDeleteView.as_view(), name='resource_delete'),
     
     # Swagger URLs
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
