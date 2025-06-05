@@ -25,6 +25,8 @@ from api.views import (
     RefreshTokenView,
     ProjectCreateView,
     ProjectListView,
+    ProjectUpdateView,
+    ProjectDeleteView,
     MessageView,
     ProjectChatView
 )
@@ -55,6 +57,8 @@ urlpatterns = [
     path('api/auth/refresh/', RefreshTokenView.as_view(), name='refresh'),
     path('api/projects/create/', ProjectCreateView.as_view(), name='project_create'),
     path('api/projects/', ProjectListView.as_view(), name='project_list'),
+    path('api/projects/<int:project_id>/update/', ProjectUpdateView.as_view(), name='project_update'),
+    path('api/projects/<int:project_id>/delete/', ProjectDeleteView.as_view(), name='project_delete'),
     path('api/projects/<int:project_id>/messages/', MessageView.as_view(), name='messages'),
     path('api/projects/<int:project_id>/chat/', ProjectChatView.as_view(), name='chat'),
     

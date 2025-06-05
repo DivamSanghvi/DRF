@@ -65,7 +65,7 @@ def set_auth_cookies(response, tokens):
         httponly=True,
         secure=False,  # Set to False for development
         samesite='Lax',
-        max_age=300  # 5 minutes
+        max_age=7200  # 2 hours (120 minutes * 60 seconds)
     )
     
     # Set refresh token cookie
@@ -266,6 +266,73 @@ class ProjectListView(APIView):
         projects = Project.objects.filter(user=request.user)
         serializer = ProjectSerializer(projects, many=True)
         return Response(serializer.data)
+
+class ProjectUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Update a project",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['name'],
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description='Project name')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Project updated successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'user': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                    }
+                )
+            ),
+            400: "Bad Request",
+            404: "Project not found"
+        }
+    )
+    def put(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = ProjectSerializer(project, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ProjectDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Delete a project",
+        responses={
+            200: openapi.Response(
+                description="Project deleted successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message')
+                    }
+                )
+            ),
+            404: "Project not found"
+        }
+    )
+    def delete(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            project.delete()
+            return Response({'message': 'Project deleted successfully'}, status=status.HTTP_200_OK)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
 
 class MessageView(APIView):
     permission_classes = [IsAuthenticated]
