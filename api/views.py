@@ -16,6 +16,8 @@ import json
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.http import StreamingHttpResponse
+from .services import pdf_processor
+import os
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -371,23 +373,37 @@ class MessageView(APIView):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
 
-class MessageLikeView(APIView):
+class MessageReactionView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Like an AI message",
+        operation_description="Like or dislike an AI message",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['reaction'],
+            properties={
+                'reaction': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=['like', 'dislike', 'remove'],
+                    description='Type of reaction to apply to the message'
+                )
+            }
+        ),
         responses={
             200: openapi.Response(
-                description="Message liked successfully",
+                description="Reaction applied successfully",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
                         'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
-                        'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Current like status')
+                        'liked': openapi.Schema(
+                            type=openapi.TYPE_BOOLEAN,
+                            description='Current reaction status (true=liked, false=disliked, null=no reaction)'
+                        )
                     }
                 )
             ),
-            400: "Cannot like user messages",
+            400: "Cannot react to user messages or invalid reaction type",
             404: "Message or project not found"
         }
     )
@@ -397,95 +413,29 @@ class MessageLikeView(APIView):
             message = Message.objects.get(id=message_id, project=project)
             
             if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can be liked'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'Only AI messages can be reacted to'}, status=status.HTTP_400_BAD_REQUEST)
             
-            message.liked = True
-            message.save()
-            
-            return Response({
-                'message': 'Message liked successfully',
-                'liked': message.liked
-            }, status=status.HTTP_200_OK)
-            
-        except Project.DoesNotExist:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
-        except Message.DoesNotExist:
-            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
-
-class MessageDislikeView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @swagger_auto_schema(
-        operation_description="Dislike an AI message",
-        responses={
-            200: openapi.Response(
-                description="Message disliked successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
-                        'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Current like status')
-                    }
+            reaction = request.data.get('reaction', '').lower()
+            if reaction not in ['like', 'dislike', 'remove']:
+                return Response(
+                    {'error': 'Invalid reaction type. Must be one of: like, dislike, remove'}, 
+                    status=status.HTTP_400_BAD_REQUEST
                 )
-            ),
-            400: "Cannot dislike user messages",
-            404: "Message or project not found"
-        }
-    )
-    def post(self, request, project_id, message_id):
-        try:
-            project = Project.objects.get(id=project_id, user=request.user)
-            message = Message.objects.get(id=message_id, project=project)
             
-            if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can be disliked'}, status=status.HTTP_400_BAD_REQUEST)
+            if reaction == 'like':
+                message.liked = True
+                success_message = 'Message liked successfully'
+            elif reaction == 'dislike':
+                message.liked = False
+                success_message = 'Message disliked successfully'
+            else:  # remove
+                message.liked = None
+                success_message = 'Reaction removed successfully'
             
-            message.liked = False
             message.save()
             
             return Response({
-                'message': 'Message disliked successfully',
-                'liked': message.liked
-            }, status=status.HTTP_200_OK)
-            
-        except Project.DoesNotExist:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
-        except Message.DoesNotExist:
-            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
-
-class MessageRemoveReactionView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @swagger_auto_schema(
-        operation_description="Remove like/dislike reaction from an AI message",
-        responses={
-            200: openapi.Response(
-                description="Reaction removed successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
-                        'liked': openapi.Schema(type=openapi.TYPE_STRING, description='Current like status (null)')
-                    }
-                )
-            ),
-            400: "Cannot remove reaction from user messages",
-            404: "Message or project not found"
-        }
-    )
-    def delete(self, request, project_id, message_id):
-        try:
-            project = Project.objects.get(id=project_id, user=request.user)
-            message = Message.objects.get(id=message_id, project=project)
-            
-            if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can have reactions removed'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            message.liked = None
-            message.save()
-            
-            return Response({
-                'message': 'Reaction removed successfully',
+                'message': success_message,
                 'liked': message.liked
             }, status=status.HTTP_200_OK)
             
@@ -712,46 +662,76 @@ class ProjectChatView(APIView):
             content=user_message_content
         )
 
-        # Handle streaming logic - handle both boolean and string values
+        # Handle streaming logic
         stream_param = request.data.get('stream')
-        
-        if stream_param is None:
-            # No stream parameter provided - default to streaming
-            should_stream = True
-        elif isinstance(stream_param, bool):
-            # Boolean value provided
-            should_stream = stream_param
-        elif isinstance(stream_param, str):
-            # String value provided - convert properly
-            should_stream = stream_param.lower() not in ['false', '0', 'no', 'off']
-        else:
-            # Other types - convert to boolean
-            should_stream = bool(stream_param)
+        should_stream = True if stream_param is None else bool(stream_param)
 
         if should_stream:
             def event_stream():
                 try:
-                    # Get streaming response from AI
-                    stream = chat(user_message_content, stream=True)
-                    
-                    # Initialize empty content for the AI message
+                    # Create AI message first
                     ai_message = Message.objects.create(
                         project=project,
                         role='assistant',
                         content=''
                     )
                     
+                    # Get streaming response from AI with project context
+                    stream = chat(user_message_content, stream=True, project_id=project_id)
+                    
                     # Stream each chunk
                     full_response = ''
+                    current_sentence = ''
+                    
                     for chunk in stream:
-                        if chunk.text:
-                            full_response += chunk.text
-                            # Update the message content
-                            ai_message.content = full_response
-                            ai_message.save()
+                        if hasattr(chunk, 'text'):
+                            chunk_text = chunk.text
+                        else:
+                            chunk_text = str(chunk)
                             
-                            # Send the chunk as an SSE
-                            yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
+                        if chunk_text:
+                            # Clean up the chunk text
+                            chunk_text = chunk_text.replace('\\n', '\n').replace('\\"', '"')
+                            
+                            # Add to current sentence
+                            current_sentence += chunk_text
+                            
+                            # Check if we have a complete sentence or punctuation
+                            if any(p in current_sentence for p in ['.', '!', '?', '\n']):
+                                # Split on punctuation
+                                parts = []
+                                temp = ''
+                                for char in current_sentence:
+                                    temp += char
+                                    if char in ['.', '!', '?', '\n']:
+                                        parts.append(temp)
+                                        temp = ''
+                                if temp:
+                                    parts.append(temp)
+                                
+                                # Send each part with a small delay
+                                for part in parts:
+                                    if part.strip():
+                                        full_response += part
+                                        # Update the message content
+                                        ai_message.content = full_response
+                                        ai_message.save()
+                                        
+                                        # Send the chunk as an SSE with proper formatting
+                                        yield f"data: {json.dumps({'chunk': part.strip()})}\n\n"
+                                        
+                                        # Add a small delay to simulate typing
+                                        import time
+                                        time.sleep(0.1)  # 100ms delay for more natural typing
+                                
+                                current_sentence = temp
+                    
+                    # Send any remaining text
+                    if current_sentence.strip():
+                        full_response += current_sentence
+                        ai_message.content = full_response
+                        ai_message.save()
+                        yield f"data: {json.dumps({'chunk': current_sentence.strip()})}\n\n"
                     
                     # Send the final message data
                     ai_message_serializer = MessageSerializer(ai_message)
@@ -759,6 +739,10 @@ class ProjectChatView(APIView):
                     
                 except Exception as e:
                     logger.error(f"Error in streaming response: {e}")
+                    # Update the AI message with error
+                    if 'ai_message' in locals():
+                        ai_message.content = f"Error: {str(e)}"
+                        ai_message.save()
                     yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
             response = StreamingHttpResponse(
@@ -770,21 +754,19 @@ class ProjectChatView(APIView):
             return response
 
         else:
-            # Get AI response (non-streaming)
+            # Non-streaming response handling remains the same
             try:
-                ai_response_content = chat(user_message_content, stream=False)
+                ai_response_content = chat(user_message_content, stream=False, project_id=project_id)
             except Exception as e:
                 logger.error(f"Error getting AI response: {e}")
                 ai_response_content = "Sorry, I couldn't process your message at the moment."
 
-            # Create AI response message
             ai_message = Message.objects.create(
                 project=project,
                 role='assistant',
                 content=ai_response_content
             )
 
-            # Serialize and return both messages
             user_message_serializer = MessageSerializer(user_message)
             ai_message_serializer = MessageSerializer(ai_message)
 
@@ -797,28 +779,41 @@ class ResourceAddView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Add a PDF resource to a project",
+        operation_description="Add one or more PDF resources to a project",
         manual_parameters=[
             openapi.Parameter('project_id', openapi.IN_PATH, description="Project ID", type=openapi.TYPE_INTEGER),
         ],
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['pdf_file'],
+            required=['pdf_files'],
             properties={
-                'pdf_file': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_BINARY, description='PDF file to upload')
+                'pdf_files': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_BINARY),
+                    description='List of PDF files to upload'
+                )
             }
         ),
         responses={
             201: openapi.Response(
-                description="Resource added successfully",
+                description="Resources added successfully",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
-                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'user': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'project': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'pdf_file': openapi.Schema(type=openapi.TYPE_STRING, description='File URL'),
-                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'resources': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'user': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'project': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    'pdf_file': openapi.Schema(type=openapi.TYPE_STRING, description='File URL'),
+                                    'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                                }
+                            )
+                        )
                     }
                 )
             ),
@@ -832,88 +827,125 @@ class ResourceAddView(APIView):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Validate file upload
-        if 'pdf_file' not in request.FILES:
-            return Response({'error': 'PDF file is required'}, status=status.HTTP_400_BAD_REQUEST)
+        # Check if files were uploaded
+        if 'pdf_files' not in request.FILES:
+            return Response({'error': 'PDF files are required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        uploaded_file = request.FILES['pdf_file']
-        if not uploaded_file.name.lower().endswith('.pdf'):
-            return Response({'error': 'Only PDF files are allowed'}, status=status.HTTP_400_BAD_REQUEST)
+        uploaded_files = request.FILES.getlist('pdf_files')
+        if not uploaded_files:
+            return Response({'error': 'No PDF files were uploaded'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create resource
-        resource = Resource.objects.create(
-            user=request.user,
-            project=project,
-            pdf_file=uploaded_file
-        )
+        # Validate all files are PDFs
+        for file in uploaded_files:
+            if not file.name.lower().endswith('.pdf'):
+                return Response(
+                    {'error': f'Only PDF files are allowed. Found: {file.name}'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Create resources for each PDF
+        created_resources = []
+        all_docs = []
         
-        serializer = ResourceSerializer(resource)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        for pdf_file in uploaded_files:
+            # Save the PDF file
+            resource = Resource.objects.create(
+                user=request.user,
+                project=project,
+                pdf_file=pdf_file
+            )
+            created_resources.append(resource)
+            
+            # Process the PDF and get documents
+            pdf_path = resource.pdf_file.path
+            docs = pdf_processor.process_pdf(pdf_path)
+            if docs:
+                all_docs.extend(docs)
+        
+        # Create or update vector store for the project
+        if all_docs:
+            pdf_processor.save_or_update_vector_store(all_docs, project_id)
+        
+        # Serialize all created resources
+        serializer = ResourceSerializer(created_resources, many=True)
+        
+        return Response({
+            'message': f'Successfully uploaded and processed {len(created_resources)} PDF(s)',
+            'resources': serializer.data
+        }, status=status.HTTP_201_CREATED)
 
-class ResourceListView(APIView):
+class ResourceView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Get all PDF resources for a project",
+        operation_description="List all resources for a project",
         responses={
             200: openapi.Response(
                 description="List of resources",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_ARRAY,
-                    items=openapi.Schema(
-                        type=openapi.TYPE_OBJECT,
-                        properties={
-                            'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                            'user': openapi.Schema(type=openapi.TYPE_INTEGER),
-                            'project': openapi.Schema(type=openapi.TYPE_INTEGER),
-                            'pdf_file': openapi.Schema(type=openapi.TYPE_STRING, description='File URL'),
-                            'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
-                        }
-                    )
-                )
+                schema=ResourceSerializer(many=True)
             ),
             404: "Project not found"
         }
     )
     def get(self, request, project_id):
         try:
-            project = Project.objects.get(id=project_id, user=request.user)
-            resources = Resource.objects.filter(project=project, user=request.user).order_by('-created_at')
+            project = Project.objects.get(id=project_id)
+            resources = Resource.objects.filter(project=project)
             serializer = ResourceSerializer(resources, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.data)
         except Project.DoesNotExist:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
-
-class ResourceDeleteView(APIView):
-    permission_classes = [IsAuthenticated]
+            return Response({"error": "Project not found"}, status=status.HTTP_404_NOT_FOUND)
 
     @swagger_auto_schema(
-        operation_description="Delete a PDF resource",
+        operation_description="Delete a specific resource",
         responses={
-            200: openapi.Response(
-                description="Resource deleted successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message')
-                    }
-                )
-            ),
+            204: "Resource deleted successfully",
             404: "Resource not found"
         }
     )
     def delete(self, request, project_id, resource_id):
         try:
-            project = Project.objects.get(id=project_id, user=request.user)
-            resource = Resource.objects.get(id=resource_id, project=project, user=request.user)
+            resource = Resource.objects.get(id=resource_id, project_id=project_id)
             
-            # Delete the actual file
+            # Delete the PDF file from storage
             if resource.pdf_file:
-                resource.pdf_file.delete()
+                if os.path.isfile(resource.pdf_file.path):
+                    os.remove(resource.pdf_file.path)
             
+            # Delete the resource from database
             resource.delete()
-            return Response({'message': 'Resource deleted successfully'}, status=status.HTTP_200_OK)
-        except Project.DoesNotExist:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Update vector store by removing the resource's documents
+            pdf_processor.remove_resource_from_vector_store(project_id, resource_id)
+            
+            return Response(status=status.HTTP_204_NO_CONTENT)
         except Resource.DoesNotExist:
-            return Response({'error': 'Resource not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "Resource not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    @swagger_auto_schema(
+        operation_description="Update a resource's metadata",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description='New name for the resource'),
+                'description': openapi.Schema(type=openapi.TYPE_STRING, description='New description for the resource')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Updated resource",
+                schema=ResourceSerializer()
+            ),
+            404: "Resource not found"
+        }
+    )
+    def patch(self, request, project_id, resource_id):
+        try:
+            resource = Resource.objects.get(id=resource_id, project_id=project_id)
+            serializer = ResourceSerializer(resource, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Resource.DoesNotExist:
+            return Response({"error": "Resource not found"}, status=status.HTTP_404_NOT_FOUND)

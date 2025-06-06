@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, re_path
+from django.urls import path, re_path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from api.views import (
@@ -30,34 +30,66 @@ from api.views import (
     ProjectUpdateView,
     ProjectDeleteView,
     MessageView,
-    MessageLikeView,
-    MessageDislikeView,
-    MessageRemoveReactionView,
+    MessageReactionView,
     MessageAddFeedbackView,
     MessageUpdateFeedbackView,
     MessageRemoveFeedbackView,
     ProjectChatView,
     ResourceAddView,
-    ResourceListView,
-    ResourceDeleteView
+    ResourceView
 )
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 
+# Define schema view first
 schema_view = get_schema_view(
     openapi.Info(
-        title="DRF API",
+        title="DRF MVC API with PDF RAG",
         default_version='v1',
-        description="API documentation for DRF project",
+        description="""
+        A Django REST Framework API that implements a Model-View-Controller (MVC) architecture with PDF processing and Retrieval-Augmented Generation (RAG) capabilities.
+
+        ## Features
+        - User Authentication (JWT)
+        - Project Management
+        - PDF Processing & RAG
+        - Real-time Chat with Context Awareness
+        - Message Feedback System
+
+        ## Authentication
+        All endpoints except registration and login require JWT authentication.
+        Include the JWT token in the Authorization header or use cookies.
+
+        ## PDF Processing
+        - Supports multiple PDF uploads
+        - Automatic text extraction
+        - OCR for scanned documents
+        - Language detection
+        - Vector store creation
+
+        ## Chat Features
+        - Real-time streaming responses
+        - Context-aware responses using PDF content
+        - Message feedback system
+        - User feedback on AI responses
+        """,
         terms_of_service="https://www.google.com/policies/terms/",
-        contact=openapi.Contact(email="contact@example.com"),
-        license=openapi.License(name="BSD License"),
+        contact=openapi.Contact(
+            email="contact@example.com",
+            name="API Support",
+            url="https://github.com/yourusername/drf"
+        ),
+        license=openapi.License(
+            name="MIT License",
+            url="https://opensource.org/licenses/MIT"
+        ),
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
 )
 
+# Define URL patterns
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/greet/', GreetingView.as_view(), name='greet'),
@@ -71,16 +103,14 @@ urlpatterns = [
     path('api/projects/<int:project_id>/update/', ProjectUpdateView.as_view(), name='project_update'),
     path('api/projects/<int:project_id>/delete/', ProjectDeleteView.as_view(), name='project_delete'),
     path('api/projects/<int:project_id>/messages/', MessageView.as_view(), name='messages'),
-    path('api/projects/<int:project_id>/messages/<int:message_id>/like/', MessageLikeView.as_view(), name='message_like'),
-    path('api/projects/<int:project_id>/messages/<int:message_id>/dislike/', MessageDislikeView.as_view(), name='message_dislike'),
-    path('api/projects/<int:project_id>/messages/<int:message_id>/reaction/', MessageRemoveReactionView.as_view(), name='message_remove_reaction'),
-    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/', MessageAddFeedbackView.as_view(), name='message_add_feedback'),
-    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/update/', MessageUpdateFeedbackView.as_view(), name='message_update_feedback'),
-    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/remove/', MessageRemoveFeedbackView.as_view(), name='message_remove_feedback'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/reaction/', MessageReactionView.as_view(), name='message_reaction'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/', MessageAddFeedbackView.as_view(), name='message_feedback'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/update/', MessageUpdateFeedbackView.as_view(), name='message_feedback_update'),
+    path('api/projects/<int:project_id>/messages/<int:message_id>/feedback/remove/', MessageRemoveFeedbackView.as_view(), name='message_feedback_remove'),
     path('api/projects/<int:project_id>/chat/', ProjectChatView.as_view(), name='chat'),
-    path('api/projects/<int:project_id>/resources/', ResourceListView.as_view(), name='resource_list'),
-    path('api/projects/<int:project_id>/resources/upload/', ResourceAddView.as_view(), name='resource_add'),
-    path('api/projects/<int:project_id>/resources/<int:resource_id>/delete/', ResourceDeleteView.as_view(), name='resource_delete'),
+    path('api/projects/<int:project_id>/resources/', ResourceView.as_view(), name='resource_list'),
+    path('api/projects/<int:project_id>/resources/add/', ResourceAddView.as_view(), name='resource_add'),
+    path('api/projects/<int:project_id>/resources/<int:resource_id>/', ResourceView.as_view(), name='resource_detail'),
     
     # Swagger URLs
     re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
@@ -88,5 +118,6 @@ urlpatterns = [
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
 
+# Add media URLs in debug mode
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
