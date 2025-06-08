@@ -918,7 +918,7 @@ class ResourceView(APIView):
             # Update vector store by removing the resource's documents
             pdf_processor.remove_resource_from_vector_store(project_id, resource_id)
             
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response(status=status.HTTP_202_ACCEPTED)
         except Resource.DoesNotExist:
             return Response({"error": "Resource not found"}, status=status.HTTP_404_NOT_FOUND)
 
