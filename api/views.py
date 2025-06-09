@@ -717,8 +717,24 @@ class ProjectChatView(APIView):
                                         ai_message.content = full_response
                                         ai_message.save()
                                         
+                                        # Create the response object
+                                        response_data = {
+                                            "message": part.strip(),
+                                            "role": "Pi",
+                                            "user_id": None,
+                                            "user_name": None,
+                                            "profile_url": None,
+                                            "profile_picture": None,
+                                            "conv_id": project.id,
+                                            "timestamp": datetime.now().isoformat(),
+                                            "status": "Start",
+                                            "conv_type": "llm_conversation",
+                                            "file_data": None,
+                                            "model_choice": "Pi-LLM"
+                                        }
+                                        
                                         # Send the chunk as an SSE with proper formatting
-                                        yield f"data: {json.dumps({'chunk': part.strip()})}\n\n"
+                                        yield f"data: {json.dumps(response_data)}\n\n"
                                         
                                         # Add a small delay to simulate typing
                                         import time
@@ -731,11 +747,42 @@ class ProjectChatView(APIView):
                         full_response += current_sentence
                         ai_message.content = full_response
                         ai_message.save()
-                        yield f"data: {json.dumps({'chunk': current_sentence.strip()})}\n\n"
+                        
+                        # Create the response object for remaining text
+                        response_data = {
+                            "message": current_sentence.strip(),
+                            "role": "Pi",
+                            "user_id": None,
+                            "user_name": None,
+                            "profile_url": None,
+                            "profile_picture": None,
+                            "conv_id": project.id,
+                            "timestamp": datetime.now().isoformat(),
+                            "status": "Start",
+                            "conv_type": "llm_conversation",
+                            "file_data": None,
+                            "model_choice": "Pi-LLM"
+                        }
+                        
+                        yield f"data: {json.dumps(response_data)}\n\n"
                     
                     # Send the final message data
                     ai_message_serializer = MessageSerializer(ai_message)
-                    yield f"data: {json.dumps({'done': True, 'message': ai_message_serializer.data})}\n\n"
+                    final_response = {
+                        "message": ai_message.content,
+                        "role": "Pi",
+                        "user_id": None,
+                        "user_name": None,
+                        "profile_url": None,
+                        "profile_picture": None,
+                        "conv_id": project.id,
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "Complete",
+                        "conv_type": "llm_conversation",
+                        "file_data": None,
+                        "model_choice": "Pi-LLM"
+                    }
+                    yield f"data: {json.dumps({'done': True, 'message': final_response})}\n\n"
                     
                 except Exception as e:
                     logger.error(f"Error in streaming response: {e}")
@@ -743,7 +790,22 @@ class ProjectChatView(APIView):
                     if 'ai_message' in locals():
                         ai_message.content = f"Error: {str(e)}"
                         ai_message.save()
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                    
+                    error_response = {
+                        "message": f"Error: {str(e)}",
+                        "role": "Pi",
+                        "user_id": None,
+                        "user_name": None,
+                        "profile_url": None,
+                        "profile_picture": None,
+                        "conv_id": project.id,
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "Error",
+                        "conv_type": "llm_conversation",
+                        "file_data": None,
+                        "model_choice": "Pi-LLM"
+                    }
+                    yield f"data: {json.dumps({'error': error_response})}\n\n"
 
             response = StreamingHttpResponse(
                 event_stream(),
