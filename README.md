@@ -6,10 +6,9 @@ A Django REST Framework project that implements a Model-View-Controller (MVC) ar
 
 - **User Authentication**
   - JWT-based authentication
-  - User registration and login with email/password
-  - **GitHub OAuth integration** - Login with GitHub account
+  - User registration and login
+  - GitHub OAuth integration
   - Token refresh mechanism
-  - Secure HTTP-only cookie storage
 
 - **Project Management**
   - Create, read, update, and delete projects
@@ -54,35 +53,21 @@ A Django REST Framework project that implements a Model-View-Controller (MVC) ar
 4. **Set up environment variables**
    Create a `.env` file in the project root:
    ```
-   # AI Configuration
    GEMINI_API_KEY=your_gemini_api_key
-   
-   # Django Configuration
    SECRET_KEY=your_django_secret_key
-   JWT_SECRET_KEY=your_jwt_secret_key
    
-   # GitHub OAuth Configuration
-   GITHUB_CLIENT_ID=your_github_client_id
-   GITHUB_CLIENT_SECRET=your_github_client_secret
+   # GitHub OAuth (optional)
+   GITHUB_CLIENT_ID=your_github_app_client_id
+   GITHUB_CLIENT_SECRET=your_github_app_client_secret
+   GITHUB_REDIRECT_URI=http://localhost:8000/api/auth/github/callback/
    ```
 
-5. **Set up GitHub OAuth Application**
-   - Go to GitHub → Settings → Developer settings → OAuth Apps
-   - Click "New OAuth App"
-   - Fill in the details:
-     ```
-     Application name: Your App Name
-     Homepage URL: http://localhost:8000
-     Authorization callback URL: http://localhost:8000/api/auth/github/callback/
-     ```
-   - Copy the Client ID and Client Secret to your `.env` file
-
-6. **Run migrations**
+5. **Run migrations**
    ```bash
    python manage.py migrate
    ```
 
-7. **Start the development server**
+6. **Start the development server**
    ```bash
    python manage.py runserver
    ```
@@ -97,13 +82,14 @@ The API documentation is available at:
 
 #### Authentication
 - `POST /api/auth/register/` - Register new user
-- `POST /api/auth/login/` - User login with email/password
+- `POST /api/auth/login/` - User login
 - `POST /api/auth/logout/` - User logout
 - `POST /api/auth/refresh/` - Refresh JWT token
 
-#### GitHub OAuth Authentication
-- `GET /api/auth/github/` - Initiate GitHub OAuth login
-- `GET /api/auth/github/callback/` - Handle GitHub OAuth callback
+#### GitHub OAuth
+- `GET /api/auth/github/` - Initiate GitHub OAuth (get authorization URL)
+- `GET /api/auth/github/callback/` - Handle GitHub callback (returns tokens in cookies)
+- `GET /api/auth/github/token/` - Handle GitHub callback (returns tokens in response body)
 
 #### Projects
 - `POST /api/projects/create/` - Create new project
@@ -121,153 +107,12 @@ The API documentation is available at:
 #### Chat
 - `POST /api/projects/<id>/chat/` - Send message to AI
 - `GET /api/projects/<id>/messages/` - Get chat history
-- `POST /api/projects/<id>/messages/<id>/reaction/` - Like/dislike message
+- `POST /api/projects/<id>/messages/<id>/like/` - Like message
+- `POST /api/projects/<id>/messages/<id>/dislike/` - Dislike message
+- `DELETE /api/projects/<id>/messages/<id>/reaction/` - Remove reaction
 - `POST /api/projects/<id>/messages/<id>/feedback/` - Add feedback
 - `PUT /api/projects/<id>/messages/<id>/feedback/update/` - Update feedback
 - `DELETE /api/projects/<id>/messages/<id>/feedback/remove/` - Remove feedback
-
-## Testing the API
-
-### Testing with ThunderClient/Postman
-
-#### 1. Basic Health Check
-```http
-GET http://localhost:8000/api/hello/
-```
-
-#### 2. GitHub OAuth Testing
-
-**Step 1: Get GitHub Authorization URL**
-```http
-GET http://localhost:8000/api/auth/github/
-```
-
-**Expected Response:**
-```json
-{
-    "auth_url": "https://github.com/login/oauth/authorize?client_id=...",
-    "state": "security_token"
-}
-```
-
-**Step 2: Complete OAuth Flow (Browser)**
-1. Copy the `auth_url` from the response
-2. Paste in browser and authorize your GitHub app
-3. Get redirected back with user logged in
-
-**Step 3: Test Protected Endpoints**
-```http
-GET http://localhost:8000/api/projects/
-```
-
-#### 3. Traditional Authentication Testing
-
-**Register New User:**
-```http
-POST http://localhost:8000/api/auth/register/
-Content-Type: application/json
-
-{
-    "email": "test@example.com",
-    "password": "password123"
-}
-```
-
-**Login:**
-```http
-POST http://localhost:8000/api/auth/login/
-Content-Type: application/json
-
-{
-    "email": "test@example.com", 
-    "password": "password123"
-}
-```
-
-#### 4. Project Management Testing
-
-**Create Project:**
-```http
-POST http://localhost:8000/api/projects/create/
-Content-Type: application/json
-
-{
-    "name": "My Test Project"
-}
-```
-
-**List Projects:**
-```http
-GET http://localhost:8000/api/projects/
-```
-
-#### 5. PDF Upload Testing
-
-**Upload PDF:**
-```http
-POST http://localhost:8000/api/projects/1/resources/add/
-Content-Type: multipart/form-data
-
-pdf_files: [select your PDF files]
-```
-
-#### 6. Chat Testing
-
-**Send Message:**
-```http
-POST http://localhost:8000/api/projects/1/chat/
-Content-Type: application/json
-
-{
-    "message": "What is this document about?",
-    "stream": false
-}
-```
-
-### Automated Testing Script
-
-Run the included test script:
-```bash
-python test_github_auth.py
-```
-
-This will test:
-- ✅ Server connectivity
-- ✅ GitHub OAuth endpoint functionality  
-- ✅ URL generation and validation
-- ✅ Existing authentication endpoints
-- ✅ Swagger documentation accessibility
-
-### Testing OAuth Flow Limitations
-
-**Note:** OAuth flows require browser interaction, so:
-- ✅ **API Clients** (ThunderClient/Postman) can test individual endpoints
-- ✅ **Browser** is needed for complete OAuth flow
-- ✅ **Hybrid approach** works best for comprehensive testing
-
-## GitHub OAuth Integration Details
-
-### How It Works
-1. **User clicks "Login with GitHub"** in your frontend
-2. **Frontend calls** `GET /api/auth/github/` to get authorization URL
-3. **User is redirected** to GitHub for authorization
-4. **GitHub redirects back** to your callback URL with authorization code
-5. **Your server exchanges code** for user information
-6. **User is created/logged in** and JWT tokens are set
-7. **User can access** all protected endpoints
-
-### Security Features
-- **State parameter** prevents CSRF attacks
-- **HTTP-only cookies** prevent XSS attacks
-- **Token validation** verifies all GitHub responses
-- **Email matching** links GitHub accounts to existing users
-
-### User Flow Options
-Users can authenticate using either:
-- **Email/Password** (traditional method)
-- **GitHub Account** (OAuth method)
-
-Both methods result in the same JWT tokens and access levels.
 
 ## PDF Processing Features
 
@@ -287,6 +132,47 @@ The system supports:
 - User feedback on AI responses
 - Conversation history tracking
 
+## GitHub OAuth Setup & Testing
+
+### Prerequisites
+1. Create a GitHub OAuth App at https://github.com/settings/applications/new
+2. Set Authorization callback URL to: `http://localhost:8000/api/auth/github/callback/`
+3. Add your GitHub app credentials to `.env` file
+
+### Testing GitHub OAuth
+
+#### Method 1: API Testing (ThunderClient/Postman)
+```bash
+# 1. Initiate OAuth
+GET http://localhost:8000/api/auth/github/
+
+# 2. Copy 'authorization_url' from response and visit in browser
+# 3. Authorize the application on GitHub
+# 4. Copy 'code' parameter from callback URL
+
+# 5. Get tokens directly (easier for API testing)
+GET http://localhost:8000/api/auth/github/token/?code=YOUR_CODE_HERE
+
+# 6. Use access_token for authenticated requests
+GET http://localhost:8000/api/projects/
+Authorization: Bearer YOUR_ACCESS_TOKEN_HERE
+```
+
+#### Method 2: Browser Testing
+```bash
+# 1. Visit: http://localhost:8000/api/auth/github/
+# 2. Copy authorization URL and visit in new tab
+# 3. Authorize application
+# 4. Check browser cookies (access_token, refresh_token)
+# 5. Use cookies for subsequent API calls
+```
+
+### OAuth Flow Features
+- **Smart User Management**: Links GitHub accounts to existing email users or creates new users
+- **Security**: CSRF protection via state parameter, secure cookie settings
+- **Token Consistency**: Same JWT tokens as email/password authentication
+- **Seamless Integration**: GitHub users get full access to all protected endpoints
+
 ## Dependencies
 
 Key packages used:
@@ -298,45 +184,6 @@ Key packages used:
 - Sentence Transformers for embeddings
 - Gemini API for AI responses
 - Requests for GitHub OAuth API calls
-
-## Environment Variables Reference
-
-```env
-# Required - AI Configuration
-GEMINI_API_KEY=your_gemini_api_key
-
-# Required - Django Configuration  
-SECRET_KEY=your_django_secret_key
-JWT_SECRET_KEY=your_jwt_secret_key
-
-# Required - GitHub OAuth
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-
-# Optional - JWT Token Lifetimes (in minutes/days)
-JWT_ACCESS_TOKEN_LIFETIME=120
-JWT_REFRESH_TOKEN_LIFETIME=1
-
-# Optional - Debug Mode
-DEBUG=True
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**1. GitHub OAuth "Invalid redirect URI"**
-- Ensure callback URL in GitHub app matches: `http://localhost:8000/api/auth/github/callback/`
-
-**2. "GitHub OAuth not configured" error**
-- Check your `.env` file has `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
-
-**3. JWT token issues**
-- Ensure `JWT_SECRET_KEY` is set in `.env`
-- Check if cookies are being set properly
-
-**4. PDF processing errors**
-- Ensure all dependencies are installed: `pip install -r requirements.txt`
 
 ## Contributing
 

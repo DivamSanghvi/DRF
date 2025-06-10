@@ -17,6 +17,10 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.http import StreamingHttpResponse
 from .services import pdf_processor
+from .github_oauth import GitHubOAuthService
+from django.shortcuts import redirect
+from django.db import transaction
+import secrets
 import os
 
 logger = logging.getLogger(__name__)
@@ -202,6 +206,359 @@ class RefreshTokenView(APIView):
             return set_auth_cookies(response, tokens)
         except Exception as e:
             return Response({'error': 'Invalid refresh token'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GitHubOAuthInitiateView(APIView):
+    """
+    Initiate GitHub OAuth flow by redirecting to GitHub authorization URL
+    """
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Initiate GitHub OAuth authentication flow",
+        responses={
+            302: openapi.Response(
+                description="Redirect to GitHub authorization",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'authorization_url': openapi.Schema(type=openapi.TYPE_STRING, description='GitHub authorization URL')
+                    }
+                )
+            ),
+            500: "GitHub OAuth not configured"
+        }
+    )
+    def get(self, request):
+        try:
+            # Check if GitHub OAuth is configured
+            if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
+                return Response(
+                    {'error': 'GitHub OAuth not configured on server'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Generate a random state for CSRF protection
+            state = secrets.token_urlsafe(32)
+            request.session['github_oauth_state'] = state
+            
+            # Get GitHub authorization URL
+            auth_url = GitHubOAuthService.get_authorization_url(state=state)
+            
+            # Return the URL instead of redirecting (for API usage)
+            return Response({
+                'authorization_url': auth_url,
+                'message': 'Redirect to the authorization_url to complete GitHub OAuth'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error initiating GitHub OAuth: {e}")
+            return Response(
+                {'error': 'Failed to initiate GitHub OAuth'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class GitHubOAuthCallbackView(APIView):
+    """
+    Handle GitHub OAuth callback and complete authentication
+    """
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Handle GitHub OAuth callback and authenticate user",
+        manual_parameters=[
+            openapi.Parameter('code', openapi.IN_QUERY, description="Authorization code from GitHub", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('state', openapi.IN_QUERY, description="State parameter for CSRF protection", type=openapi.TYPE_STRING),
+        ],
+        responses={
+            200: openapi.Response(
+                description="GitHub authentication successful",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'user': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'github_username': openapi.Schema(type=openapi.TYPE_STRING),
+                                'is_github_user': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                            }
+                        ),
+                        'created': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True if new user was created')
+                    }
+                )
+            ),
+            400: "Bad Request - Invalid or missing parameters",
+            401: "Authentication failed",
+            500: "Internal server error"
+        }
+    )
+    def get(self, request):
+        try:
+            # Get code and state from query parameters
+            code = request.GET.get('code')
+            state = request.GET.get('state')
+            
+            if not code:
+                return Response(
+                    {'error': 'Authorization code is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Verify state parameter (CSRF protection)
+            stored_state = request.session.get('github_oauth_state')
+            if state and stored_state and state != stored_state:
+                return Response(
+                    {'error': 'Invalid state parameter'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Clear the state from session
+            request.session.pop('github_oauth_state', None)
+            
+            # Exchange code for access token
+            access_token = GitHubOAuthService.exchange_code_for_token(code)
+            if not access_token:
+                return Response(
+                    {'error': 'Failed to exchange code for access token'}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # Get user data from GitHub
+            github_user_data = GitHubOAuthService.get_user_data(access_token)
+            if not github_user_data:
+                return Response(
+                    {'error': 'Failed to get user data from GitHub'}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # Check if email is available
+            if not github_user_data.get('email'):
+                return Response(
+                    {'error': 'GitHub account must have a public email address'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            email = github_user_data['email']
+            github_id = str(github_user_data['id'])
+            
+            user_created = False
+            
+            with transaction.atomic():
+                # Check if user exists by email or GitHub ID
+                user = None
+                try:
+                    # First try to find by GitHub ID
+                    user = User.objects.get(github_id=github_id)
+                    logger.info(f"Found existing user by GitHub ID: {github_id}")
+                except User.DoesNotExist:
+                    try:
+                        # Then try to find by email
+                        user = User.objects.get(email=email)
+                        logger.info(f"Found existing user by email: {email}")
+                        
+                        # Update existing user with GitHub info
+                        user.github_id = github_id
+                        user.github_username = github_user_data.get('login')
+                        user.github_avatar_url = github_user_data.get('avatar_url')
+                        user.is_github_user = True
+                        user.save()
+                        
+                    except User.DoesNotExist:
+                        # Create new user
+                        user_data = GitHubOAuthService.parse_user_for_registration(github_user_data)
+                        
+                        user = User.objects.create_user(
+                            email=user_data['email'],
+                            first_name=user_data['first_name'],
+                            last_name=user_data['last_name'],
+                            github_id=user_data['github_id'],
+                            github_username=user_data['github_username'],
+                            github_avatar_url=user_data['github_avatar_url'],
+                            is_github_user=user_data['is_github_user'],
+                            is_active=user_data['is_active']
+                        )
+                        user_created = True
+                        logger.info(f"Created new GitHub user: {email}")
+            
+            # Generate JWT tokens
+            tokens = get_tokens_for_user(user)
+            
+            # Prepare response data
+            response_data = {
+                'message': 'GitHub authentication successful',
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'github_username': user.github_username,
+                    'is_github_user': user.is_github_user
+                },
+                'created': user_created
+            }
+            
+            response = Response(response_data, status=status.HTTP_200_OK)
+            return set_auth_cookies(response, tokens)
+            
+        except Exception as e:
+            logger.error(f"Error in GitHub OAuth callback: {e}")
+            return Response(
+                {'error': 'GitHub authentication failed'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class GitHubOAuthTokenView(APIView):
+    """
+    GitHub OAuth callback that returns tokens directly in response body for API testing
+    """
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Handle GitHub OAuth callback and return tokens in response body",
+        manual_parameters=[
+            openapi.Parameter('code', openapi.IN_QUERY, description="Authorization code from GitHub", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('state', openapi.IN_QUERY, description="State parameter for CSRF protection", type=openapi.TYPE_STRING),
+        ],
+        responses={
+            200: openapi.Response(
+                description="GitHub authentication successful with tokens",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'access_token': openapi.Schema(type=openapi.TYPE_STRING, description='JWT access token'),
+                        'refresh_token': openapi.Schema(type=openapi.TYPE_STRING, description='JWT refresh token'),
+                        'user': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'github_username': openapi.Schema(type=openapi.TYPE_STRING),
+                                'is_github_user': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                            }
+                        ),
+                        'created': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True if new user was created')
+                    }
+                )
+            ),
+            400: "Bad Request - Invalid or missing parameters",
+            401: "Authentication failed",
+            500: "Internal server error"
+        }
+    )
+    def get(self, request):
+        try:
+            # Get code and state from query parameters
+            code = request.GET.get('code')
+            state = request.GET.get('state')
+            
+            if not code:
+                return Response(
+                    {'error': 'Authorization code is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Exchange code for access token
+            access_token = GitHubOAuthService.exchange_code_for_token(code)
+            if not access_token:
+                return Response(
+                    {'error': 'Failed to exchange code for access token'}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # Get user data from GitHub
+            github_user_data = GitHubOAuthService.get_user_data(access_token)
+            if not github_user_data:
+                return Response(
+                    {'error': 'Failed to get user data from GitHub'}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # Check if email is available
+            if not github_user_data.get('email'):
+                return Response(
+                    {'error': 'GitHub account must have a public email address'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            email = github_user_data['email']
+            github_id = str(github_user_data['id'])
+            
+            user_created = False
+            
+            with transaction.atomic():
+                # Check if user exists by email or GitHub ID
+                user = None
+                try:
+                    # First try to find by GitHub ID
+                    user = User.objects.get(github_id=github_id)
+                    logger.info(f"Found existing user by GitHub ID: {github_id}")
+                except User.DoesNotExist:
+                    try:
+                        # Then try to find by email
+                        user = User.objects.get(email=email)
+                        logger.info(f"Found existing user by email: {email}")
+                        
+                        # Update existing user with GitHub info
+                        user.github_id = github_id
+                        user.github_username = github_user_data.get('login')
+                        user.github_avatar_url = github_user_data.get('avatar_url')
+                        user.is_github_user = True
+                        user.save()
+                        
+                    except User.DoesNotExist:
+                        # Create new user
+                        user_data = GitHubOAuthService.parse_user_for_registration(github_user_data)
+                        
+                        user = User.objects.create_user(
+                            email=user_data['email'],
+                            first_name=user_data['first_name'],
+                            last_name=user_data['last_name'],
+                            github_id=user_data['github_id'],
+                            github_username=user_data['github_username'],
+                            github_avatar_url=user_data['github_avatar_url'],
+                            is_github_user=user_data['is_github_user'],
+                            is_active=user_data['is_active']
+                        )
+                        user_created = True
+                        logger.info(f"Created new GitHub user: {email}")
+            
+            # Generate JWT tokens
+            tokens = get_tokens_for_user(user)
+            
+            # Return tokens directly in response body for API testing
+            response_data = {
+                'message': 'GitHub authentication successful',
+                'access_token': tokens['access'],
+                'refresh_token': tokens['refresh'],
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'github_username': user.github_username,
+                    'is_github_user': user.is_github_user
+                },
+                'created': user_created
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error in GitHub OAuth token endpoint: {e}")
+            return Response(
+                {'error': 'GitHub authentication failed'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class ProjectCreateView(APIView):
     permission_classes = [IsAuthenticated]

@@ -36,6 +36,12 @@ class User(AbstractUser):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
+    
+    # GitHub OAuth fields
+    github_id = models.CharField(max_length=20, null=True, blank=True, unique=True)
+    github_username = models.CharField(max_length=39, null=True, blank=True)  # GitHub max username length
+    github_avatar_url = models.URLField(null=True, blank=True)
+    is_github_user = models.BooleanField(default=False)
 
     objects = UserManager()
 
