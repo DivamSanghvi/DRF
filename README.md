@@ -78,41 +78,139 @@ The API documentation is available at:
 - Swagger UI: `http://127.0.0.1:8000/swagger/`
 - ReDoc: `http://127.0.0.1:8000/redoc/`
 
-### Key Endpoints
+### API Endpoints
 
-#### Authentication
-- `POST /api/auth/register/` - Register new user
-- `POST /api/auth/login/` - User login
-- `POST /api/auth/logout/` - User logout
-- `POST /api/auth/refresh/` - Refresh JWT token
+#### General Endpoints
+| Method | Endpoint | Description | Authentication Required |
+|--------|----------|-------------|------------------------|
+| GET | `/api/hello/` | Hello World message | No |
+| GET | `/api/greet/?name=<name>` | Personalized greeting | No |
 
-#### GitHub OAuth
-- `GET /api/auth/github/` - Initiate GitHub OAuth (get authorization URL)
-- `GET /api/auth/github/callback/` - Handle GitHub callback (returns tokens in cookies)
-- `GET /api/auth/github/token/` - Handle GitHub callback (returns tokens in response body)
+#### Authentication Endpoints
+| Method | Endpoint | Description | Authentication Required | Request Body |
+|--------|----------|-------------|------------------------|--------------|
+| POST | `/api/auth/register/` | Register new user | No | `{"email": "user@example.com", "password": "password123", "password2": "password123"}` |
+| POST | `/api/auth/login/` | User login with email/password | No | `{"email": "user@example.com", "password": "password123"}` |
+| POST | `/api/auth/logout/` | User logout (clears cookies) | No | None |
+| POST | `/api/auth/refresh/` | Refresh JWT access token | No | Uses refresh token from cookies |
 
-#### Projects
-- `POST /api/projects/create/` - Create new project
-- `GET /api/projects/` - List user's projects
-- `PUT /api/projects/<id>/update/` - Update project
-- `DELETE /api/projects/<id>/delete/` - Delete project
+#### GitHub OAuth Endpoints
+| Method | Endpoint | Description | Authentication Required | Response |
+|--------|----------|-------------|------------------------|----------|
+| GET | `/api/auth/github/` | Get GitHub OAuth authorization URL | No | `{"auth_url": "https://github.com/login/oauth/authorize?..."}` |
+| GET | `/api/auth/github/callback/` | Handle GitHub OAuth callback (sets cookies) | No | Redirected from GitHub with auth code |
+| GET | `/api/auth/github/token/` | Handle GitHub OAuth callback (returns tokens) | No | `{"access_token": "...", "refresh_token": "..."}` |
 
-#### Resources (PDFs)
-- `POST /api/projects/<id>/resources/add/` - Upload PDF files
-- `GET /api/projects/<id>/resources/` - List project resources
-- `GET /api/projects/<id>/resources/<resource_id>/` - Get resource details
-- `PATCH /api/projects/<id>/resources/<resource_id>/` - Update resource metadata
-- `DELETE /api/projects/<id>/resources/<resource_id>/` - Delete resource
+#### Project Management Endpoints
+| Method | Endpoint | Description | Authentication Required | Request Body |
+|--------|----------|-------------|------------------------|--------------|
+| POST | `/api/projects/create/` | Create new project | Yes | `{"name": "My Project"}` |
+| GET | `/api/projects/` | List user's projects | Yes | None |
+| PUT | `/api/projects/<project_id>/update/` | Update project details | Yes | `{"name": "Updated Project Name"}` |
+| DELETE | `/api/projects/<project_id>/delete/` | Delete project | Yes | None |
 
-#### Chat
-- `POST /api/projects/<id>/chat/` - Send message to AI
-- `GET /api/projects/<id>/messages/` - Get chat history
-- `POST /api/projects/<id>/messages/<id>/like/` - Like message
-- `POST /api/projects/<id>/messages/<id>/dislike/` - Dislike message
-- `DELETE /api/projects/<id>/messages/<id>/reaction/` - Remove reaction
-- `POST /api/projects/<id>/messages/<id>/feedback/` - Add feedback
-- `PUT /api/projects/<id>/messages/<id>/feedback/update/` - Update feedback
-- `DELETE /api/projects/<id>/messages/<id>/feedback/remove/` - Remove feedback
+#### Resource (PDF) Management Endpoints
+| Method | Endpoint | Description | Authentication Required | Request Body |
+|--------|----------|-------------|------------------------|--------------|
+| POST | `/api/projects/<project_id>/resources/add/` | Upload PDF files to project | Yes | Form-data with `pdf_file` field(s) |
+| GET | `/api/projects/<project_id>/resources/` | List project's PDF resources | Yes | None |
+| GET | `/api/projects/<project_id>/resources/<resource_id>/` | Get specific resource details | Yes | None |
+| PATCH | `/api/projects/<project_id>/resources/<resource_id>/` | Update resource metadata | Yes | `{"metadata": "..."}` |
+| DELETE | `/api/projects/<project_id>/resources/<resource_id>/` | Delete resource | Yes | None |
+
+#### Chat & Messaging Endpoints
+| Method | Endpoint | Description | Authentication Required | Request Body |
+|--------|----------|-------------|------------------------|--------------|
+| POST | `/api/projects/<project_id>/chat/` | Send message to AI (streaming response) | Yes | `{"message": "Your question here"}` |
+| GET | `/api/projects/<project_id>/messages/` | Get chat history for project | Yes | None |
+
+#### Message Feedback Endpoints
+| Method | Endpoint | Description | Authentication Required | Request Body |
+|--------|----------|-------------|------------------------|--------------|
+| POST | `/api/projects/<project_id>/messages/<message_id>/reaction/` | Like/dislike message | Yes | `{"liked": true}` or `{"liked": false}` |
+| DELETE | `/api/projects/<project_id>/messages/<message_id>/reaction/` | Remove like/dislike reaction | Yes | None |
+| POST | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Add text feedback to message | Yes | `{"user_feedback_message": "This was helpful"}` |
+| PUT | `/api/projects/<project_id>/messages/<message_id>/feedback/update/` | Update existing feedback | Yes | `{"user_feedback_message": "Updated feedback"}` |
+| DELETE | `/api/projects/<project_id>/messages/<message_id>/feedback/remove/` | Remove feedback from message | Yes | None |
+
+#### Documentation Endpoints
+| Method | Endpoint | Description | Authentication Required |
+|--------|----------|-------------|------------------------|
+| GET | `/swagger/` | Swagger UI documentation | No |
+| GET | `/redoc/` | ReDoc documentation | No |
+| GET | `/swagger.json` | OpenAPI JSON schema | No |
+| GET | `/swagger.yaml` | OpenAPI YAML schema | No |
+
+### Authentication Methods
+
+1. **JWT Tokens (Recommended for API clients)**
+   ```bash
+   # Include in Authorization header
+   Authorization: Bearer <access_token>
+   ```
+
+2. **HTTP Cookies (Automatic for browser clients)**
+   - Tokens are automatically set as HttpOnly cookies after login/registration
+   - No additional headers needed for subsequent requests
+
+### Response Formats
+
+All API responses follow this format:
+
+**Success Response:**
+```json
+{
+    "message": "Operation successful",
+    "data": { ... },
+    "user": { ... }  // For auth endpoints
+}
+```
+
+**Error Response:**
+```json
+{
+    "error": "Error description",
+    "details": { ... }  // Optional additional details
+}
+```
+
+### Example Usage
+
+#### 1. Register and Login
+```bash
+# Register
+curl -X POST http://localhost:8000/api/auth/register/ \
+  -H "Content-Type: application/json" \
+  -d '{"email": "test@example.com", "password": "password123", "password2": "password123"}'
+
+# Login
+curl -X POST http://localhost:8000/api/auth/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"email": "test@example.com", "password": "password123"}'
+```
+
+#### 2. Create Project and Upload PDF
+```bash
+# Create project (use token from login response)
+curl -X POST http://localhost:8000/api/projects/create/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Research Project"}'
+
+# Upload PDF
+curl -X POST http://localhost:8000/api/projects/1/resources/add/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -F "pdf_file=@document.pdf"
+```
+
+#### 3. Chat with AI
+```bash
+# Send message
+curl -X POST http://localhost:8000/api/projects/1/chat/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is this document about?"}'
+```
 
 ## PDF Processing Features
 
