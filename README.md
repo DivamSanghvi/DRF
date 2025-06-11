@@ -140,120 +140,59 @@ The API documentation is available at:
 | GET | `/swagger.yaml` | OpenAPI YAML schema | No |
 
 ### Authentication Methods
-
-1. **JWT Tokens (Recommended for API clients)**
-   ```bash
-   # Include in Authorization header
-   Authorization: Bearer <access_token>
-   ```
-
-2. **HTTP Cookies (Automatic for browser clients)**
-   - Tokens are automatically set as HttpOnly cookies after login/registration
-   - No additional headers needed for subsequent requests
+- **Token Authentication**: Include the token in the Authorization header.
+  ```
+  Authorization: Token <your_token>
+  ```
 
 ### Response Formats
+- **Success Response**:
+  ```json
+  {
+    "status": "success",
+    "message": "Feedback added successfully",
+    "data": {
+      "reaction": "like",
+      "feedback_text": "This was helpful"
+    }
+  }
+  ```
 
-All API responses follow this format:
-
-**Success Response:**
-```json
-{
-    "message": "Operation successful",
-    "data": { ... },
-    "user": { ... }  // For auth endpoints
-}
-```
-
-**Error Response:**
-```json
-{
-    "error": "Error description",
-    "details": { ... }  // Optional additional details
-}
-```
+- **Error Response**:
+  ```json
+  {
+    "status": "error",
+    "message": "Invalid reaction type",
+    "errors": {
+      "reaction": ["Invalid reaction type. Must be one of: like, dislike, neutral"]
+    }
+  }
+  ```
 
 ### Example Usage
+1. **Add Feedback**:
+   ```bash
+   curl -X POST http://localhost:8000/api/projects/1/messages/1/feedback/ \
+     -H "Authorization: Token <your_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"reaction": "like", "feedback_text": "This was helpful"}'
+   ```
 
-#### 1. Register and Login
-```bash
-# Register
-curl -X POST http://localhost:8000/api/auth/register/ \
-  -H "Content-Type: application/json" \
-  -d '{"email": "test@example.com", "password": "password123", "password2": "password123"}'
+2. **Update Feedback**:
+   ```bash
+   curl -X PUT http://localhost:8000/api/projects/1/messages/1/feedback/ \
+     -H "Authorization: Token <your_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"reaction": "dislike", "feedback_text": "Updated feedback"}'
+   ```
 
-# Login
-curl -X POST http://localhost:8000/api/auth/login/ \
-  -H "Content-Type: application/json" \
-  -d '{"email": "test@example.com", "password": "password123"}'
-```
-
-#### 2. Create Project and Upload PDF
-```bash
-# Create project (use token from login response)
-curl -X POST http://localhost:8000/api/projects/create/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Research Project"}'
-
-# Upload PDF
-curl -X POST http://localhost:8000/api/projects/1/resources/add/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -F "pdf_file=@document.pdf"
-```
-
-#### 3. Chat with AI and Provide Feedback
-```bash
-# Send message
-curl -X POST http://localhost:8000/api/projects/1/chat/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What is this document about?"}'
-
-# Get messages to find AI response message ID
-curl -X GET http://localhost:8000/api/projects/1/messages/ \
-  -H "Authorization: Bearer <your_access_token>"
-
-# Add reaction only
-curl -X POST http://localhost:8000/api/projects/1/messages/2/feedback/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"reaction": "like"}'
-
-# Add text feedback only
-curl -X POST http://localhost:8000/api/projects/1/messages/2/feedback/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"feedback_text": "This response was very helpful!"}'
-
-# Add both reaction and text feedback together
-curl -X POST http://localhost:8000/api/projects/1/messages/2/feedback/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"reaction": "like", "feedback_text": "Great explanation of the document!"}'
-
-# Update existing feedback
-curl -X PUT http://localhost:8000/api/projects/1/messages/2/feedback/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"reaction": "dislike", "feedback_text": "Actually, this could be better"}'
-
-# Remove all feedback
-curl -X DELETE http://localhost:8000/api/projects/1/messages/2/feedback/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -d '{}'
-
-# Remove only reaction (keep text feedback)
-curl -X DELETE http://localhost:8000/api/projects/1/messages/2/feedback/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"remove_reaction": true, "remove_feedback_text": false}'
-
-# Remove only text feedback (keep reaction)
-curl -X DELETE http://localhost:8000/api/projects/1/messages/2/feedback/ \
-  -H "Authorization: Bearer <your_access_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"remove_reaction": false, "remove_feedback_text": true}'
-```
+3. **Remove Feedback**:
+   ```bash
+   curl -X DELETE http://localhost:8000/api/projects/1/messages/1/feedback/ \
+     -H "Authorization: Token <your_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"remove_reaction": true, "remove_feedback_text": false}'
+   ```
 
 ## PDF Processing Features
 
