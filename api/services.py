@@ -13,6 +13,11 @@ from langchain_community.vectorstores import FAISS
 from langchain.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 import logging
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 logger = logging.getLogger(__name__)
 
@@ -234,5 +239,88 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Error removing resource from vector store: {e}")
             return False
+
+def capture_browser_errors(url):
+    """
+    Captures browser console errors using Selenium.
+    
+    Args:
+        url (str): The URL to check for console errors
+        
+    Returns:
+        list: List of console errors found
+    """
+    try:
+        # Configure Chrome options
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')  # Run in headless mode
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        
+        # Enable console logging
+        chrome_options.set_capability('goog:loggingPrefs', {'browser': 'ALL'})
+        
+        # Initialize the driver
+        driver = webdriver.Chrome(options=chrome_options)
+        
+        # Store console logs
+        console_errors = []
+        
+        try:
+            # Navigate to the URL
+            driver.get(url)
+            
+            # Wait for page to load (adjust timeout as needed)
+            WebDriverWait(driver, 10).until(
+                lambda d: d.execute_script('return document.readyState') == 'complete'
+            )
+            
+            # Get console logs
+            logs = driver.get_log('browser')
+            
+            # Filter for errors and warnings
+            for log in logs:
+                if log['level'] in ['SEVERE', 'WARNING']:
+                    console_errors.append({
+                        'level': log['level'],
+                        'message': log['message'],
+                        'timestamp': log['timestamp']
+                    })
+                    logger.error(f"Browser Console {log['level']}: {log['message']}")
+            
+            return console_errors
+            
+        finally:
+            # Always close the driver
+            driver.quit()
+            
+    except Exception as e:
+        logger.error(f"Error capturing browser console errors: {str(e)}")
+        return [{
+            'level': 'ERROR',
+            'message': f"Failed to capture browser errors: {str(e)}",
+            'timestamp': None
+        }]
+
+def check_browser_errors(url):
+    """
+    Checks for browser console errors and prints them to console.
+    
+    Args:
+        url (str): The URL to check for console errors
+    """
+    errors = capture_browser_errors(url)
+    
+    if errors:
+        print("\n=== Browser Console Errors ===")
+        for error in errors:
+            print(f"\nLevel: {error['level']}")
+            print(f"Message: {error['message']}")
+            if error['timestamp']:
+                print(f"Timestamp: {error['timestamp']}")
+        print("\n===========================")
+    else:
+        print("\nNo browser console errors found.")
 
 pdf_processor = PDFProcessor() 
