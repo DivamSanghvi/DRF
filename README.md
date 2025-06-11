@@ -127,11 +127,9 @@ The API documentation is available at:
 #### Message Feedback Endpoints
 | Method | Endpoint | Description | Authentication Required | Request Body |
 |--------|----------|-------------|------------------------|--------------|
-| POST | `/api/projects/<project_id>/messages/<message_id>/reaction/` | Like/dislike message | Yes | `{"liked": true}` or `{"liked": false}` |
-| DELETE | `/api/projects/<project_id>/messages/<message_id>/reaction/` | Remove like/dislike reaction | Yes | None |
-| POST | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Add text feedback to message | Yes | `{"user_feedback_message": "This was helpful"}` |
-| PUT | `/api/projects/<project_id>/messages/<message_id>/feedback/update/` | Update existing feedback | Yes | `{"user_feedback_message": "Updated feedback"}` |
-| DELETE | `/api/projects/<project_id>/messages/<message_id>/feedback/remove/` | Remove feedback from message | Yes | None |
+| POST | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Add reaction and/or text feedback | Yes | `{"reaction": "like", "feedback_text": "This was helpful"}` |
+| PUT | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Update existing reaction and/or feedback | Yes | `{"reaction": "dislike", "feedback_text": "Updated feedback"}` |
+| DELETE | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Remove feedback (all or specific parts) | Yes | `{"remove_reaction": true, "remove_feedback_text": false}` or `{}` for all |
 
 #### Documentation Endpoints
 | Method | Endpoint | Description | Authentication Required |
@@ -203,13 +201,58 @@ curl -X POST http://localhost:8000/api/projects/1/resources/add/ \
   -F "pdf_file=@document.pdf"
 ```
 
-#### 3. Chat with AI
+#### 3. Chat with AI and Provide Feedback
 ```bash
 # Send message
 curl -X POST http://localhost:8000/api/projects/1/chat/ \
   -H "Authorization: Bearer <your_access_token>" \
   -H "Content-Type: application/json" \
   -d '{"message": "What is this document about?"}'
+
+# Get messages to find AI response message ID
+curl -X GET http://localhost:8000/api/projects/1/messages/ \
+  -H "Authorization: Bearer <your_access_token>"
+
+# Add reaction only
+curl -X POST http://localhost:8000/api/projects/1/messages/2/feedback/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"reaction": "like"}'
+
+# Add text feedback only
+curl -X POST http://localhost:8000/api/projects/1/messages/2/feedback/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"feedback_text": "This response was very helpful!"}'
+
+# Add both reaction and text feedback together
+curl -X POST http://localhost:8000/api/projects/1/messages/2/feedback/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"reaction": "like", "feedback_text": "Great explanation of the document!"}'
+
+# Update existing feedback
+curl -X PUT http://localhost:8000/api/projects/1/messages/2/feedback/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"reaction": "dislike", "feedback_text": "Actually, this could be better"}'
+
+# Remove all feedback
+curl -X DELETE http://localhost:8000/api/projects/1/messages/2/feedback/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -d '{}'
+
+# Remove only reaction (keep text feedback)
+curl -X DELETE http://localhost:8000/api/projects/1/messages/2/feedback/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"remove_reaction": true, "remove_feedback_text": false}'
+
+# Remove only text feedback (keep reaction)
+curl -X DELETE http://localhost:8000/api/projects/1/messages/2/feedback/ \
+  -H "Authorization: Bearer <your_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"remove_reaction": false, "remove_feedback_text": true}'
 ```
 
 ## PDF Processing Features

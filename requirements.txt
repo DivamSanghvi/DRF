@@ -21,3 +21,4 @@ langdetect==1.0.9
 numpy==1.26.4
 opencv-python==4.9.0.80
 requests==2.31.0
+selenium==4.25.0

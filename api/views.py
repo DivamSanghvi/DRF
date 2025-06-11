@@ -730,87 +730,23 @@ class MessageView(APIView):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
 
-class MessageReactionView(APIView):
+class MessageFeedbackView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Like or dislike an AI message",
+        operation_description="Add feedback (reaction and/or text) for an AI message",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['reaction'],
             properties={
                 'reaction': openapi.Schema(
                     type=openapi.TYPE_STRING,
                     enum=['like', 'dislike', 'remove'],
-                    description='Type of reaction to apply to the message'
+                    description='Reaction to apply to the message (optional)'
+                ),
+                'feedback_text': openapi.Schema(
+                    type=openapi.TYPE_STRING, 
+                    description='Text feedback for the message (optional)'
                 )
-            }
-        ),
-        responses={
-            200: openapi.Response(
-                description="Reaction applied successfully",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
-                        'liked': openapi.Schema(
-                            type=openapi.TYPE_BOOLEAN,
-                            description='Current reaction status (true=liked, false=disliked, null=no reaction)'
-                        )
-                    }
-                )
-            ),
-            400: "Cannot react to user messages or invalid reaction type",
-            404: "Message or project not found"
-        }
-    )
-    def post(self, request, project_id, message_id):
-        try:
-            project = Project.objects.get(id=project_id, user=request.user)
-            message = Message.objects.get(id=message_id, project=project)
-            
-            if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can be reacted to'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            reaction = request.data.get('reaction', '').lower()
-            if reaction not in ['like', 'dislike', 'remove']:
-                return Response(
-                    {'error': 'Invalid reaction type. Must be one of: like, dislike, remove'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            if reaction == 'like':
-                message.liked = True
-                success_message = 'Message liked successfully'
-            elif reaction == 'dislike':
-                message.liked = False
-                success_message = 'Message disliked successfully'
-            else:  # remove
-                message.liked = None
-                success_message = 'Reaction removed successfully'
-            
-            message.save()
-            
-            return Response({
-                'message': success_message,
-                'liked': message.liked
-            }, status=status.HTTP_200_OK)
-            
-        except Project.DoesNotExist:
-            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
-        except Message.DoesNotExist:
-            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
-
-class MessageAddFeedbackView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @swagger_auto_schema(
-        operation_description="Add feedback to an AI message",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['feedback'],
-            properties={
-                'feedback': openapi.Schema(type=openapi.TYPE_STRING, description='User feedback message')
             }
         ),
         responses={
@@ -820,11 +756,18 @@ class MessageAddFeedbackView(APIView):
                     type=openapi.TYPE_OBJECT,
                     properties={
                         'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
-                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='The feedback message')
+                        'liked': openapi.Schema(
+                            type=openapi.TYPE_BOOLEAN,
+                            description='Current reaction status (true=liked, false=disliked, null=no reaction)'
+                        ),
+                        'user_feedback_message': openapi.Schema(
+                            type=openapi.TYPE_STRING, 
+                            description='Current feedback text'
+                        )
                     }
                 )
             ),
-            400: "Cannot add feedback to user messages or feedback already exists",
+            400: "Cannot provide feedback to user messages or invalid parameters",
             404: "Message or project not found"
         }
     )
@@ -836,18 +779,49 @@ class MessageAddFeedbackView(APIView):
             if message.role != 'assistant':
                 return Response({'error': 'Only AI messages can receive feedback'}, status=status.HTTP_400_BAD_REQUEST)
             
-            feedback_text = request.data.get('feedback')
-            if not feedback_text:
-                return Response({'error': 'Feedback text is required'}, status=status.HTTP_400_BAD_REQUEST)
+            reaction = request.data.get('reaction', '').lower() if request.data.get('reaction') else None
+            feedback_text = request.data.get('feedback_text')
             
-            if message.user_feedback_message:
-                return Response({'error': 'Feedback already exists. Use update endpoint to modify.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Validate reaction if provided
+            if reaction and reaction not in ['like', 'dislike', 'remove']:
+                return Response(
+                    {'error': 'Invalid reaction type. Must be one of: like, dislike, remove'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
-            message.user_feedback_message = feedback_text
+            # Check if at least one parameter is provided
+            if not reaction and not feedback_text:
+                return Response(
+                    {'error': 'At least one of reaction or feedback_text must be provided'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            updated_fields = []
+            
+            # Handle reaction
+            if reaction:
+                if reaction == 'like':
+                    message.liked = True
+                    updated_fields.append('reaction (liked)')
+                elif reaction == 'dislike':
+                    message.liked = False
+                    updated_fields.append('reaction (disliked)')
+                elif reaction == 'remove':
+                    message.liked = None
+                    updated_fields.append('reaction (removed)')
+            
+            # Handle feedback text
+            if feedback_text:
+                message.user_feedback_message = feedback_text
+                updated_fields.append('text feedback')
+            
             message.save()
             
+            success_message = f"Message feedback added: {', '.join(updated_fields)}"
+            
             return Response({
-                'message': 'Feedback added successfully',
+                'message': success_message,
+                'liked': message.liked,
                 'user_feedback_message': message.user_feedback_message
             }, status=status.HTTP_200_OK)
             
@@ -856,16 +830,20 @@ class MessageAddFeedbackView(APIView):
         except Message.DoesNotExist:
             return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
 
-class MessageUpdateFeedbackView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @swagger_auto_schema(
-        operation_description="Update feedback on an AI message",
+        operation_description="Update existing feedback (reaction and/or text) for an AI message",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['feedback'],
             properties={
-                'feedback': openapi.Schema(type=openapi.TYPE_STRING, description='Updated user feedback message')
+                'reaction': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    enum=['like', 'dislike', 'remove'],
+                    description='Updated reaction for the message (optional)'
+                ),
+                'feedback_text': openapi.Schema(
+                    type=openapi.TYPE_STRING, 
+                    description='Updated text feedback for the message (optional)'
+                )
             }
         ),
         responses={
@@ -875,11 +853,18 @@ class MessageUpdateFeedbackView(APIView):
                     type=openapi.TYPE_OBJECT,
                     properties={
                         'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
-                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='The updated feedback message')
+                        'liked': openapi.Schema(
+                            type=openapi.TYPE_BOOLEAN,
+                            description='Current reaction status (true=liked, false=disliked, null=no reaction)'
+                        ),
+                        'user_feedback_message': openapi.Schema(
+                            type=openapi.TYPE_STRING, 
+                            description='Current feedback text'
+                        )
                     }
                 )
             ),
-            400: "Cannot update feedback on user messages or no feedback exists",
+            400: "Cannot update feedback on user messages or invalid parameters",
             404: "Message or project not found"
         }
     )
@@ -891,18 +876,49 @@ class MessageUpdateFeedbackView(APIView):
             if message.role != 'assistant':
                 return Response({'error': 'Only AI messages can receive feedback'}, status=status.HTTP_400_BAD_REQUEST)
             
-            feedback_text = request.data.get('feedback')
-            if not feedback_text:
-                return Response({'error': 'Feedback text is required'}, status=status.HTTP_400_BAD_REQUEST)
+            reaction = request.data.get('reaction', '').lower() if request.data.get('reaction') else None
+            feedback_text = request.data.get('feedback_text')
             
-            if not message.user_feedback_message:
-                return Response({'error': 'No existing feedback to update. Use add endpoint first.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Validate reaction if provided
+            if reaction and reaction not in ['like', 'dislike', 'remove']:
+                return Response(
+                    {'error': 'Invalid reaction type. Must be one of: like, dislike, remove'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
-            message.user_feedback_message = feedback_text
+            # Check if at least one parameter is provided
+            if not reaction and feedback_text is None:
+                return Response(
+                    {'error': 'At least one of reaction or feedback_text must be provided'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            updated_fields = []
+            
+            # Handle reaction
+            if reaction:
+                if reaction == 'like':
+                    message.liked = True
+                    updated_fields.append('reaction (liked)')
+                elif reaction == 'dislike':
+                    message.liked = False
+                    updated_fields.append('reaction (disliked)')
+                elif reaction == 'remove':
+                    message.liked = None
+                    updated_fields.append('reaction (removed)')
+            
+            # Handle feedback text (including empty string to clear feedback)
+            if feedback_text is not None:
+                message.user_feedback_message = feedback_text if feedback_text.strip() else None
+                updated_fields.append('text feedback')
+            
             message.save()
             
+            success_message = f"Message feedback updated: {', '.join(updated_fields)}"
+            
             return Response({
-                'message': 'Feedback updated successfully',
+                'message': success_message,
+                'liked': message.liked,
                 'user_feedback_message': message.user_feedback_message
             }, status=status.HTTP_200_OK)
             
@@ -911,11 +927,21 @@ class MessageUpdateFeedbackView(APIView):
         except Message.DoesNotExist:
             return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
 
-class MessageRemoveFeedbackView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @swagger_auto_schema(
-        operation_description="Remove feedback from an AI message",
+        operation_description="Remove feedback (both reaction and text, or specific parts) from an AI message",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'remove_reaction': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Remove reaction (like/dislike) - if not specified, removes all feedback'
+                ),
+                'remove_feedback_text': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Remove text feedback - if not specified, removes all feedback'
+                )
+            }
+        ),
         responses={
             200: openapi.Response(
                 description="Feedback removed successfully",
@@ -923,7 +949,8 @@ class MessageRemoveFeedbackView(APIView):
                     type=openapi.TYPE_OBJECT,
                     properties={
                         'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
-                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Current feedback status (null)')
+                        'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Current reaction status'),
+                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Current feedback text')
                     }
                 )
             ),
@@ -939,11 +966,37 @@ class MessageRemoveFeedbackView(APIView):
             if message.role != 'assistant':
                 return Response({'error': 'Only AI messages can have feedback removed'}, status=status.HTTP_400_BAD_REQUEST)
             
-            message.user_feedback_message = None
+            # Check what to remove
+            remove_reaction = request.data.get('remove_reaction', True)  # Default: remove reaction
+            remove_feedback_text = request.data.get('remove_feedback_text', True)  # Default: remove text
+            
+            # If no specific parameters provided, remove everything
+            if 'remove_reaction' not in request.data and 'remove_feedback_text' not in request.data:
+                remove_reaction = True
+                remove_feedback_text = True
+            
+            removed_parts = []
+            
+            # Remove reaction if requested
+            if remove_reaction:
+                message.liked = None
+                removed_parts.append('reaction')
+            
+            # Remove feedback text if requested
+            if remove_feedback_text:
+                message.user_feedback_message = None
+                removed_parts.append('text feedback')
+            
             message.save()
             
+            if removed_parts:
+                success_message = f"Removed: {', '.join(removed_parts)}"
+            else:
+                success_message = "No changes made"
+            
             return Response({
-                'message': 'Feedback removed successfully',
+                'message': success_message,
+                'liked': message.liked,
                 'user_feedback_message': message.user_feedback_message
             }, status=status.HTTP_200_OK)
             
@@ -1306,12 +1359,22 @@ class ResourceView(APIView):
             404: "Project not found"
         }
     )
-    def get(self, request, project_id):
+    def get(self, request, project_id, resource_id=None):
         try:
             project = Project.objects.get(id=project_id)
-            resources = Resource.objects.filter(project=project)
-            serializer = ResourceSerializer(resources, many=True)
-            return Response(serializer.data)
+            if resource_id:
+                # Return specific resource
+                try:
+                    resource = Resource.objects.get(id=resource_id, project=project)
+                    serializer = ResourceSerializer(resource)
+                    return Response(serializer.data)
+                except Resource.DoesNotExist:
+                    return Response({"error": "Resource not found"}, status=status.HTTP_404_NOT_FOUND)
+            else:
+                # Return all resources for the project
+                resources = Resource.objects.filter(project=project)
+                serializer = ResourceSerializer(resources, many=True)
+                return Response(serializer.data)
         except Project.DoesNotExist:
             return Response({"error": "Project not found"}, status=status.HTTP_404_NOT_FOUND)
 
