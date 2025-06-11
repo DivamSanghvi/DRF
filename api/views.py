@@ -698,21 +698,21 @@ class MessageView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Get all messages for a project",
+        operation_description="Get all message conversations for a project",
         responses={
             200: openapi.Response(
-                description="List of messages",
+                description="List of conversation messages",
                 schema=openapi.Schema(
                     type=openapi.TYPE_ARRAY,
                     items=openapi.Schema(
                         type=openapi.TYPE_OBJECT,
                         properties={
-                            'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Conversation ID'),
                             'project': openapi.Schema(type=openapi.TYPE_INTEGER),
-                            'role': openapi.Schema(type=openapi.TYPE_STRING),
-                            'content': openapi.Schema(type=openapi.TYPE_STRING),
+                            'user_content': openapi.Schema(type=openapi.TYPE_STRING, description='User message content'),
+                            'assistant_content': openapi.Schema(type=openapi.TYPE_STRING, description='Assistant response content'),
                             'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True=liked, False=disliked, null=no action'),
-                            'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='User feedback on AI messages'),
+                            'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='User feedback on AI response'),
                             'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                         }
                     )
@@ -734,15 +734,16 @@ class MessageFeedbackView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Get current feedback (reaction and text) for an AI message",
+        operation_description="Get current feedback (reaction and text) for an AI response",
         responses={
             200: openapi.Response(
-                description="Current feedback for the message",
+                description="Current feedback for the AI response",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
-                        'message_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Message ID'),
-                        'message_content': openapi.Schema(type=openapi.TYPE_STRING, description='Message content'),
+                        'conversation_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Conversation ID'),
+                        'user_content': openapi.Schema(type=openapi.TYPE_STRING, description='User message content'),
+                        'assistant_content': openapi.Schema(type=openapi.TYPE_STRING, description='Assistant response content'),
                         'liked': openapi.Schema(
                             type=openapi.TYPE_BOOLEAN,
                             description='Current reaction status (true=liked, false=disliked, null=no reaction)'
@@ -753,14 +754,13 @@ class MessageFeedbackView(APIView):
                         ),
                         'has_feedback': openapi.Schema(
                             type=openapi.TYPE_BOOLEAN,
-                            description='Whether this message has any feedback'
+                            description='Whether this conversation has any feedback'
                         ),
-                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time', description='Message creation time')
+                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time', description='Conversation creation time')
                     }
                 )
             ),
-            400: "Cannot get feedback for user messages",
-            404: "Message or project not found"
+            404: "Conversation or project not found"
         }
     )
     def get(self, request, project_id, message_id):
@@ -768,15 +768,13 @@ class MessageFeedbackView(APIView):
             project = Project.objects.get(id=project_id, user=request.user)
             message = Message.objects.get(id=message_id, project=project)
             
-            if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can have feedback'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Check if message has any feedback
+            # Check if conversation has any feedback
             has_feedback = message.liked is not None or message.user_feedback_message is not None
             
             return Response({
-                'message_id': message.id,
-                'message_content': message.content,
+                'conversation_id': message.id,
+                'user_content': message.user_content,
+                'assistant_content': message.assistant_content,
                 'liked': message.liked,
                 'user_feedback_message': message.user_feedback_message,
                 'has_feedback': has_feedback,
@@ -786,21 +784,21 @@ class MessageFeedbackView(APIView):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         except Message.DoesNotExist:
-            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @swagger_auto_schema(
-        operation_description="Add feedback (reaction and/or text) for an AI message",
+        operation_description="Add feedback (reaction and/or text) for an AI response",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'reaction': openapi.Schema(
                     type=openapi.TYPE_STRING,
                     enum=['like', 'dislike', 'remove'],
-                    description='Reaction to apply to the message (optional)'
+                    description='Reaction to apply to the AI response (optional)'
                 ),
                 'feedback_text': openapi.Schema(
                     type=openapi.TYPE_STRING, 
-                    description='Text feedback for the message (optional)'
+                    description='Text feedback for the AI response (optional)'
                 )
             }
         ),
@@ -822,17 +820,14 @@ class MessageFeedbackView(APIView):
                     }
                 )
             ),
-            400: "Cannot provide feedback to user messages or invalid parameters",
-            404: "Message or project not found"
+            400: "Invalid parameters",
+            404: "Conversation or project not found"
         }
     )
     def post(self, request, project_id, message_id):
         try:
             project = Project.objects.get(id=project_id, user=request.user)
             message = Message.objects.get(id=message_id, project=project)
-            
-            if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can receive feedback'}, status=status.HTTP_400_BAD_REQUEST)
             
             reaction = request.data.get('reaction', '').lower() if request.data.get('reaction') else None
             feedback_text = request.data.get('feedback_text')
@@ -883,21 +878,21 @@ class MessageFeedbackView(APIView):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         except Message.DoesNotExist:
-            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @swagger_auto_schema(
-        operation_description="Update existing feedback (reaction and/or text) for an AI message",
+        operation_description="Update existing feedback (reaction and/or text) for an AI response",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'reaction': openapi.Schema(
                     type=openapi.TYPE_STRING,
                     enum=['like', 'dislike', 'remove'],
-                    description='Updated reaction for the message (optional)'
+                    description='Updated reaction for the AI response (optional)'
                 ),
                 'feedback_text': openapi.Schema(
                     type=openapi.TYPE_STRING, 
-                    description='Updated text feedback for the message (optional)'
+                    description='Updated text feedback for the AI response (optional)'
                 )
             }
         ),
@@ -919,17 +914,14 @@ class MessageFeedbackView(APIView):
                     }
                 )
             ),
-            400: "Cannot update feedback on user messages or invalid parameters",
-            404: "Message or project not found"
+            400: "Invalid parameters",
+            404: "Conversation or project not found"
         }
     )
     def put(self, request, project_id, message_id):
         try:
             project = Project.objects.get(id=project_id, user=request.user)
             message = Message.objects.get(id=message_id, project=project)
-            
-            if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can receive feedback'}, status=status.HTTP_400_BAD_REQUEST)
             
             reaction = request.data.get('reaction', '').lower() if request.data.get('reaction') else None
             feedback_text = request.data.get('feedback_text')
@@ -980,21 +972,46 @@ class MessageFeedbackView(APIView):
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         except Message.DoesNotExist:
-            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @swagger_auto_schema(
-        operation_description="Remove feedback (both reaction and text, or specific parts) from an AI message",
+        operation_description="Remove feedback from an AI response. If no parameters specified, removes all feedback by default.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
                 'remove_reaction': openapi.Schema(
                     type=openapi.TYPE_BOOLEAN,
-                    description='Remove reaction (like/dislike) - if not specified, removes all feedback'
+                    description='Set to true to remove reaction (like/dislike). If not specified, reaction is kept. Only specify true when you want to remove - no need to specify false.'
                 ),
                 'remove_feedback_text': openapi.Schema(
                     type=openapi.TYPE_BOOLEAN,
-                    description='Remove text feedback - if not specified, removes all feedback'
+                    description='Set to true to remove text feedback. If not specified, feedback text is kept. Only specify true when you want to remove - no need to specify false.'
+                ),
+                'remove_all': openapi.Schema(
+                    type=openapi.TYPE_BOOLEAN,
+                    description='Set to true to explicitly remove all feedback (reaction + text). Overrides other parameters. Default: false'
                 )
+            },
+            examples={
+                "remove_all_default": {
+                    "summary": "Remove all feedback (default)",
+                    "description": "Empty body removes all feedback by default",
+                    "value": {}
+                },
+                "remove_reaction_only": {
+                    "summary": "Remove only reaction",
+                    "description": "Only specify what you want to remove - other items are kept automatically",
+                    "value": {"remove_reaction": True}
+                },
+                "remove_text_only": {
+                    "summary": "Remove only text feedback",
+                    "description": "Only specify what you want to remove - other items are kept automatically", 
+                    "value": {"remove_feedback_text": True}
+                },
+                "remove_all_explicit": {
+                    "summary": "Remove all feedback (explicit)",
+                    "value": {"remove_all": True}
+                }
             }
         ),
         responses={
@@ -1005,12 +1022,16 @@ class MessageFeedbackView(APIView):
                     properties={
                         'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
                         'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Current reaction status'),
-                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Current feedback text')
+                        'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Current feedback text'),
+                        'removed_items': openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(type=openapi.TYPE_STRING),
+                            description='List of items that were removed'
+                        )
                     }
                 )
             ),
-            400: "Cannot remove feedback from user messages",
-            404: "Message or project not found"
+            404: "Conversation or project not found"
         }
     )
     def delete(self, request, project_id, message_id):
@@ -1018,47 +1039,58 @@ class MessageFeedbackView(APIView):
             project = Project.objects.get(id=project_id, user=request.user)
             message = Message.objects.get(id=message_id, project=project)
             
-            if message.role != 'assistant':
-                return Response({'error': 'Only AI messages can have feedback removed'}, status=status.HTTP_400_BAD_REQUEST)
+            # Get parameters - if nothing specified, default to removing everything
+            remove_reaction = request.data.get('remove_reaction')
+            remove_feedback_text = request.data.get('remove_feedback_text')
+            remove_all = request.data.get('remove_all', False)
             
-            # Check what to remove
-            remove_reaction = request.data.get('remove_reaction', True)  # Default: remove reaction
-            remove_feedback_text = request.data.get('remove_feedback_text', True)  # Default: remove text
-            
-            # If no specific parameters provided, remove everything
-            if 'remove_reaction' not in request.data and 'remove_feedback_text' not in request.data:
+            # Handle remove_all flag
+            if remove_all:
                 remove_reaction = True
                 remove_feedback_text = True
+            
+            # If no specific parameters provided, default to removing everything
+            if remove_reaction is None and remove_feedback_text is None and not remove_all:
+                remove_reaction = True
+                remove_feedback_text = True
+            else:
+                # Use explicit values or default to False if specified
+                remove_reaction = remove_reaction if remove_reaction is not None else False
+                remove_feedback_text = remove_feedback_text if remove_feedback_text is not None else False
             
             removed_parts = []
             
             # Remove reaction if requested
             if remove_reaction:
-                message.liked = None
-                removed_parts.append('reaction')
+                if message.liked is not None:
+                    message.liked = None
+                    removed_parts.append('reaction')
+                else:
+                    removed_parts.append('reaction (was already empty)')
             
             # Remove feedback text if requested
             if remove_feedback_text:
-                message.user_feedback_message = None
-                removed_parts.append('text feedback')
+                if message.user_feedback_message is not None:
+                    message.user_feedback_message = None
+                    removed_parts.append('text feedback')
+                else:
+                    removed_parts.append('text feedback (was already empty)')
             
             message.save()
             
-            if removed_parts:
-                success_message = f"Removed: {', '.join(removed_parts)}"
-            else:
-                success_message = "No changes made"
+            success_message = f"Removed: {', '.join(removed_parts)}"
             
             return Response({
                 'message': success_message,
                 'liked': message.liked,
-                'user_feedback_message': message.user_feedback_message
+                'user_feedback_message': message.user_feedback_message,
+                'removed_items': removed_parts
             }, status=status.HTTP_200_OK)
             
         except Project.DoesNotExist:
             return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
         except Message.DoesNotExist:
-            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
 
 class ProjectChatView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1079,27 +1111,15 @@ class ProjectChatView(APIView):
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
-                        'user_message': openapi.Schema(
+                        'conversation': openapi.Schema(
                             type=openapi.TYPE_OBJECT,
                             properties={
-                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Conversation ID'),
                                 'project': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'role': openapi.Schema(type=openapi.TYPE_STRING),
-                                'content': openapi.Schema(type=openapi.TYPE_STRING),
-                                'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Always null for user messages'),
-                                'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Always null for user messages'),
-                                'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
-                            }
-                        ),
-                        'ai_response': openapi.Schema(
-                            type=openapi.TYPE_OBJECT,
-                            properties={
-                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'project': openapi.Schema(type=openapi.TYPE_INTEGER),
-                                'role': openapi.Schema(type=openapi.TYPE_STRING),
-                                'content': openapi.Schema(type=openapi.TYPE_STRING),
-                                'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True=liked, False=disliked, null=no action'),
-                                'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='User feedback on AI messages'),
+                                'user_content': openapi.Schema(type=openapi.TYPE_STRING, description='User message content'),
+                                'assistant_content': openapi.Schema(type=openapi.TYPE_STRING, description='Assistant response content'),
+                                'liked': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='Always null for new conversations'),
+                                'user_feedback_message': openapi.Schema(type=openapi.TYPE_STRING, description='Always null for new conversations'),
                                 'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
                             }
                         )
@@ -1120,13 +1140,6 @@ class ProjectChatView(APIView):
         if not user_message_content:
             return Response({'error': 'Message content is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create user message
-        user_message = Message.objects.create(
-            project=project,
-            role='user',
-            content=user_message_content
-        )
-
         # Handle streaming logic
         stream_param = request.data.get('stream')
         should_stream = True if stream_param is None else bool(stream_param)
@@ -1134,107 +1147,59 @@ class ProjectChatView(APIView):
         if should_stream:
             def event_stream():
                 try:
-                    # Create AI message first
-                    ai_message = Message.objects.create(
+                    # Get AI response first
+                    ai_response_content = chat(user_message_content, stream=False, project_id=project_id)
+                    
+                    # Create single conversation record with both user and assistant content
+                    conversation = Message.objects.create(
                         project=project,
-                        role='assistant',
-                        content=''
+                        user_content=user_message_content,
+                        assistant_content=ai_response_content
                     )
                     
-                    # Get streaming response from AI with project context
-                    stream = chat(user_message_content, stream=True, project_id=project_id)
-                    
-                    # Stream each chunk
-                    full_response = ''
+                    # Stream the AI response in chunks for better UX
+                    full_response = ai_response_content
                     current_sentence = ''
                     
-                    for chunk in stream:
-                        if hasattr(chunk, 'text'):
-                            chunk_text = chunk.text
-                        else:
-                            chunk_text = str(chunk)
-                            
-                        if chunk_text:
-                            # Clean up the chunk text
-                            chunk_text = chunk_text.replace('\\n', '\n').replace('\\"', '"')
-                            
-                            # Add to current sentence
-                            current_sentence += chunk_text
-                            
-                            # Check if we have a complete sentence or punctuation
-                            if any(p in current_sentence for p in ['.', '!', '?', '\n']):
-                                # Split on punctuation
-                                parts = []
-                                temp = ''
-                                for char in current_sentence:
-                                    temp += char
-                                    if char in ['.', '!', '?', '\n']:
-                                        parts.append(temp)
-                                        temp = ''
-                                if temp:
-                                    parts.append(temp)
-                                
-                                # Send each part with a small delay
-                                for part in parts:
-                                    if part.strip():
-                                        full_response += part
-                                        # Update the message content
-                                        ai_message.content = full_response
-                                        ai_message.save()
-                                        
-                                        # Create the response object
-                                        response_data = {
-                                            "message": part.strip(),
-                                            "role": "Pi",
-                                            "user_id": None,
-                                            "user_name": None,
-                                            "profile_url": None,
-                                            "profile_picture": None,
-                                            "conv_id": project.id,
-                                            "timestamp": datetime.now().isoformat(),
-                                            "status": "Start",
-                                            "conv_type": "llm_conversation",
-                                            "file_data": None,
-                                            "model_choice": "Pi-LLM"
-                                        }
-                                        
-                                        # Send the chunk as an SSE with proper formatting
-                                        yield f"data: {json.dumps(response_data)}\n\n"
-                                        
-                                        # Add a small delay to simulate typing
-                                        import time
-                                        time.sleep(0.1)  # 100ms delay for more natural typing
-                                
-                                current_sentence = temp
+                    # Split response into sentences for streaming
+                    sentences = []
+                    temp_sentence = ''
+                    for char in full_response:
+                        temp_sentence += char
+                        if char in ['.', '!', '?', '\n']:
+                            if temp_sentence.strip():
+                                sentences.append(temp_sentence)
+                            temp_sentence = ''
+                    if temp_sentence.strip():
+                        sentences.append(temp_sentence)
                     
-                    # Send any remaining text
-                    if current_sentence.strip():
-                        full_response += current_sentence
-                        ai_message.content = full_response
-                        ai_message.save()
-                        
-                        # Create the response object for remaining text
-                        response_data = {
-                            "message": current_sentence.strip(),
-                            "role": "Pi",
-                            "user_id": None,
-                            "user_name": None,
-                            "profile_url": None,
-                            "profile_picture": None,
-                            "conv_id": project.id,
-                            "timestamp": datetime.now().isoformat(),
-                            "status": "Start",
-                            "conv_type": "llm_conversation",
-                            "file_data": None,
-                            "model_choice": "Pi-LLM"
-                        }
-                        
-                        yield f"data: {json.dumps(response_data)}\n\n"
+                    # Stream each sentence with delay
+                    for sentence in sentences:
+                        if sentence.strip():
+                            response_data = {
+                                "message": sentence.strip(),
+                                "role": "Pi",
+                                "user_id": None,
+                                "user_name": None,
+                                "profile_url": None,
+                                "profile_picture": None,
+                                "conv_id": project.id,
+                                "timestamp": datetime.now().isoformat(),
+                                "status": "Start",
+                                "conv_type": "llm_conversation",
+                                "file_data": None,
+                                "model_choice": "Pi-LLM"
+                            }
+                            
+                            yield f"data: {json.dumps(response_data)}\n\n"
+                            
+                            import time
+                            time.sleep(0.1)  # 100ms delay for natural typing effect
                     
-                    # Send the final message data
-                    ai_message_serializer = MessageSerializer(ai_message)
+                    # Send final completion message
+                    conversation_serializer = MessageSerializer(conversation)
                     final_response = {
-                        "message": ai_message.content,
+                        "message": ai_response_content,
                         "role": "Pi",
                         "user_id": None,
                         "user_name": None,
@@ -1247,15 +1212,10 @@ class ProjectChatView(APIView):
                         "file_data": None,
                         "model_choice": "Pi-LLM"
                     }
-                    yield f"data: {json.dumps({'done': True, 'message': final_response})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'conversation': conversation_serializer.data, 'message': final_response})}\n\n"
                     
                 except Exception as e:
                     logger.error(f"Error in streaming response: {e}")
-                    # Update the AI message with error
-                    if 'ai_message' in locals():
-                        ai_message.content = f"Error: {str(e)}"
-                        ai_message.save()
-                    
                     error_response = {
                         "message": f"Error: {str(e)}",
                         "role": "Pi",
@@ -1281,25 +1241,24 @@ class ProjectChatView(APIView):
             return response
 
         else:
-            # Non-streaming response handling remains the same
+            # Non-streaming response
             try:
                 ai_response_content = chat(user_message_content, stream=False, project_id=project_id)
             except Exception as e:
                 logger.error(f"Error getting AI response: {e}")
                 ai_response_content = "Sorry, I couldn't process your message at the moment."
 
-            ai_message = Message.objects.create(
+            # Create single conversation record with both user and assistant content
+            conversation = Message.objects.create(
                 project=project,
-                role='assistant',
-                content=ai_response_content
+                user_content=user_message_content,
+                assistant_content=ai_response_content
             )
 
-            user_message_serializer = MessageSerializer(user_message)
-            ai_message_serializer = MessageSerializer(ai_message)
+            conversation_serializer = MessageSerializer(conversation)
 
             return Response({
-                'user_message': user_message_serializer.data,
-                'ai_response': ai_message_serializer.data
+                'conversation': conversation_serializer.data
             })
 
 class ResourceAddView(APIView):

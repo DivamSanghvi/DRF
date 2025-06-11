@@ -118,19 +118,41 @@ The API documentation is available at:
 | PATCH | `/api/projects/<project_id>/resources/<resource_id>/` | Update resource metadata | Yes | `{"metadata": "..."}` |
 | DELETE | `/api/projects/<project_id>/resources/<resource_id>/` | Delete resource | Yes | None |
 
+### Optimized Message Structure
+
+**Conversation Efficiency**: The system now stores user-assistant message pairs in a single database record for optimal performance. Each conversation turn (user message + AI response) creates one record with a single ID, reducing database hits from 2 to 1 per exchange.
+
+**Conversation Format**:
+```json
+{
+    "id": 1,
+    "project": 123,
+    "user_content": "User's question or message",
+    "assistant_content": "AI's response to the user",
+    "liked": null,
+    "user_feedback_message": null,
+    "created_at": "2024-01-01T12:00:00Z"
+}
+```
+
 #### Chat & Messaging Endpoints
 | Method | Endpoint | Description | Authentication Required | Request Body |
 |--------|----------|-------------|------------------------|--------------|
 | POST | `/api/projects/<project_id>/chat/` | Send message to AI (streaming response) | Yes | `{"message": "Your question here"}` |
-| GET | `/api/projects/<project_id>/messages/` | Get chat history for project | Yes | None |
+| GET | `/api/projects/<project_id>/messages/` | Get conversation history for project | Yes | None |
 
 #### Message Feedback Endpoints
-| Method | Endpoint | Description | Authentication Required | Request Body |
-|--------|----------|-------------|------------------------|--------------|
-| GET | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Get current feedback for a message | Yes | None |
-| POST | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Add reaction and/or text feedback | Yes | `{"reaction": "like", "feedback_text": "This was helpful"}` |
-| PUT | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Update existing reaction and/or feedback | Yes | `{"reaction": "dislike", "feedback_text": "Updated feedback"}` |
-| DELETE | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Remove feedback (all or specific parts) | Yes | `{"remove_reaction": true, "remove_feedback_text": false}` or `{}` for all |
+| Method | Endpoint | Description | Authentication Required | Request Body Examples |
+|--------|----------|-------------|------------------------|----------------------|
+| GET | `/api/projects/<project_id>/messages/<conversation_id>/feedback/` | Get current feedback for a conversation | Yes | None |
+| POST | `/api/projects/<project_id>/messages/<conversation_id>/feedback/` | Add reaction and/or text feedback | Yes | `{"reaction": "like"}`, `{"feedback_text": "Helpful response"}`, or `{"reaction": "dislike", "feedback_text": "Not accurate"}` |
+| PUT | `/api/projects/<project_id>/messages/<conversation_id>/feedback/` | Update existing reaction and/or feedback | Yes | `{"reaction": "like"}`, `{"feedback_text": "Updated feedback"}`, or both |
+| DELETE | `/api/projects/<project_id>/messages/<conversation_id>/feedback/` | Remove feedback (smart removal) | Yes | `{}` (all), `{"remove_reaction": true}` (reaction only), `{"remove_feedback_text": true}` (text only) |
+
+**Feedback Options:**
+- **Reactions**: `"like"`, `"dislike"`, or `"remove"` (to clear reaction)
+- **Text Feedback**: Any string to provide detailed feedback on AI responses
+- **Smart Deletion**: Only specify what you want to remove - other items are automatically preserved
 
 #### Documentation Endpoints
 | Method | Endpoint | Description | Authentication Required |

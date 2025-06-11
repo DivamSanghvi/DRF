@@ -60,20 +60,15 @@ class Project(models.Model):
         return self.name
 
 class Message(models.Model):
-    ROLE_CHOICES = [
-        ('user', 'User'),
-        ('assistant', 'Assistant'),
-    ]
-
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='messages')
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
-    content = models.TextField()
+    user_content = models.TextField(default="", help_text="User's message content")
+    assistant_content = models.TextField(default="", help_text="Assistant's response content")
     liked = models.BooleanField(null=True, blank=True, default=None, help_text="True=liked, False=disliked, None=no action")
     user_feedback_message = models.TextField(null=True, blank=True, help_text="User feedback on AI messages")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.role} - {self.created_at}"
+        return f"Conversation {self.id} - {self.created_at}"
 
 class Resource(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='resources')

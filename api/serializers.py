@@ -39,7 +39,7 @@ class ProjectSerializer(serializers.ModelSerializer):
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
-        fields = ('id', 'project', 'role', 'content', 'liked', 'user_feedback_message', 'created_at')
+        fields = ('id', 'project', 'user_content', 'assistant_content', 'liked', 'user_feedback_message', 'created_at')
         read_only_fields = ('created_at',)
 
 class ResourceSerializer(serializers.ModelSerializer):
