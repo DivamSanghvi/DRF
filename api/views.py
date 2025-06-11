@@ -734,6 +734,61 @@ class MessageFeedbackView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
+        operation_description="Get current feedback (reaction and text) for an AI message",
+        responses={
+            200: openapi.Response(
+                description="Current feedback for the message",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='Message ID'),
+                        'message_content': openapi.Schema(type=openapi.TYPE_STRING, description='Message content'),
+                        'liked': openapi.Schema(
+                            type=openapi.TYPE_BOOLEAN,
+                            description='Current reaction status (true=liked, false=disliked, null=no reaction)'
+                        ),
+                        'user_feedback_message': openapi.Schema(
+                            type=openapi.TYPE_STRING, 
+                            description='Current feedback text (null if no feedback)'
+                        ),
+                        'has_feedback': openapi.Schema(
+                            type=openapi.TYPE_BOOLEAN,
+                            description='Whether this message has any feedback'
+                        ),
+                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time', description='Message creation time')
+                    }
+                )
+            ),
+            400: "Cannot get feedback for user messages",
+            404: "Message or project not found"
+        }
+    )
+    def get(self, request, project_id, message_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            message = Message.objects.get(id=message_id, project=project)
+            
+            if message.role != 'assistant':
+                return Response({'error': 'Only AI messages can have feedback'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if message has any feedback
+            has_feedback = message.liked is not None or message.user_feedback_message is not None
+            
+            return Response({
+                'message_id': message.id,
+                'message_content': message.content,
+                'liked': message.liked,
+                'user_feedback_message': message.user_feedback_message,
+                'has_feedback': has_feedback,
+                'created_at': message.created_at.isoformat()
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Message.DoesNotExist:
+            return Response({'error': 'Message not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    @swagger_auto_schema(
         operation_description="Add feedback (reaction and/or text) for an AI message",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,

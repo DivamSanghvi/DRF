@@ -127,6 +127,7 @@ The API documentation is available at:
 #### Message Feedback Endpoints
 | Method | Endpoint | Description | Authentication Required | Request Body |
 |--------|----------|-------------|------------------------|--------------|
+| GET | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Get current feedback for a message | Yes | None |
 | POST | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Add reaction and/or text feedback | Yes | `{"reaction": "like", "feedback_text": "This was helpful"}` |
 | PUT | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Update existing reaction and/or feedback | Yes | `{"reaction": "dislike", "feedback_text": "Updated feedback"}` |
 | DELETE | `/api/projects/<project_id>/messages/<message_id>/feedback/` | Remove feedback (all or specific parts) | Yes | `{"remove_reaction": true, "remove_feedback_text": false}` or `{}` for all |
