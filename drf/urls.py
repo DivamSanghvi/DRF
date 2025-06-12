@@ -36,7 +36,10 @@ from api.views import (
     MessageFeedbackView,
     ProjectChatView,
     ResourceAddView,
-    ResourceView
+    ResourceView,
+    AppleOAuthInitiateView,
+    AppleOAuthCallbackView,
+    AppleSignInTestView
 )
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -101,6 +104,9 @@ urlpatterns = [
     path('api/auth/github/', GitHubOAuthInitiateView.as_view(), name='github_oauth_initiate'),
     path('api/auth/github/callback/', GitHubOAuthCallbackView.as_view(), name='github_oauth_callback'),
     path('api/auth/github/token/', GitHubOAuthTokenView.as_view(), name='github_oauth_token'),
+    path('api/auth/apple/', AppleOAuthInitiateView.as_view(), name='apple_oauth_initiate'),
+    path('api/auth/apple/callback/', AppleOAuthCallbackView.as_view(), name='apple_oauth_callback'),
+    path('api/auth/apple/test/', AppleSignInTestView.as_view(), name='apple_oauth_test'),
     path('api/projects/create/', ProjectCreateView.as_view(), name='project_create'),
     path('api/projects/', ProjectListView.as_view(), name='project_list'),
     path('api/projects/<int:project_id>/update/', ProjectUpdateView.as_view(), name='project_update'),

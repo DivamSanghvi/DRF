@@ -22,6 +22,7 @@ from django.shortcuts import redirect
 from django.db import transaction
 import secrets
 import os
+from .apple_oauth import AppleOAuthService
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -1173,6 +1174,7 @@ class ProjectChatView(APIView):
                     full_response = ai_response_content
                     current_sentence = ''
                     
+<<<<<<< Updated upstream
                     # Split response into sentences for streaming
                     sentences = []
                     temp_sentence = ''
@@ -1212,6 +1214,85 @@ class ProjectChatView(APIView):
                     conversation_serializer = MessageSerializer(conversation)
                     final_response = {
                         "message": ai_response_content,
+=======
+                    for chunk in stream:
+                        if hasattr(chunk, 'text'):
+                            chunk_text = chunk.text
+                        else:
+                            chunk_text = str(chunk)
+                            
+                        if chunk_text:
+                            # Clean up the chunk text
+                            chunk_text = chunk_text.replace('\\n', '\n').replace('\\"', '"')
+                            
+                            # Add to current sentence
+                            current_sentence += chunk_text
+                            
+                            # Check if we have a complete sentence or punctuation
+                            if any(p in current_sentence for p in ['.', '!', '?', '\n']):
+                                # Split on punctuation
+                                parts = []
+                                temp = ''
+                                for char in current_sentence:
+                                    temp += char
+                                    if char in ['.', '!', '?', '\n']:
+                                        parts.append(temp)
+                                        temp = ''
+                                if temp:
+                                    parts.append(temp)
+                                
+                                # Send each part with a small delay
+                                for part in parts:
+                                    if part.strip():
+                                        # Create the response object
+                                        response_data = {
+                                            "message": part.strip(),
+                                            "role": "Pi",
+                                            "user_id": None,
+                                            "user_name": None,
+                                            "profile_url": None,
+                                            "profile_picture": None,
+                                            "conv_id": project.id,
+                                            "timestamp": datetime.now().isoformat(),
+                                            "status": "Start",
+                                            "conv_type": "llm_conversation",
+                                            "file_data": None,
+                                            "model_choice": "Pi-LLM"
+                                        }
+                                        
+                                        # Send the chunk as an SSE with proper formatting
+                                        yield f"data: {json.dumps(response_data)}\n\n"
+                                        
+                                        # Add a small delay to simulate typing
+                                        import time
+                                        time.sleep(0.1)  # 100ms delay for more natural typing
+                                
+                                current_sentence = temp
+                    
+                    # Send any remaining text
+                    if current_sentence.strip():
+                        # Create the response object for remaining text
+                        response_data = {
+                            "message": current_sentence.strip(),
+                            "role": "Pi",
+                            "user_id": None,
+                            "user_name": None,
+                            "profile_url": None,
+                            "profile_picture": None,
+                            "conv_id": project.id,
+                            "timestamp": datetime.now().isoformat(),
+                            "status": "Start",
+                            "conv_type": "llm_conversation",
+                            "file_data": None,
+                            "model_choice": "Pi-LLM"
+                        }
+                        
+                        yield f"data: {json.dumps(response_data)}\n\n"
+                    
+                    # Send the final message with status Complete
+                    final_response = {
+                        "message": "",
+>>>>>>> Stashed changes
                         "role": "Pi",
                         "user_id": None,
                         "user_name": None,
@@ -1469,3 +1550,333 @@ class ResourceView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Resource.DoesNotExist:
             return Response({"error": "Resource not found"}, status=status.HTTP_404_NOT_FOUND)
+
+class AppleOAuthInitiateView(APIView):
+    """
+    Initiate Apple Sign In flow by redirecting to Apple authorization URL
+    """
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Initiate Apple Sign In authentication flow",
+        responses={
+            302: openapi.Response(
+                description="Redirect to Apple authorization",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'authorization_url': openapi.Schema(type=openapi.TYPE_STRING, description='Apple authorization URL')
+                    }
+                )
+            ),
+            500: "Apple Sign In not configured"
+        }
+    )
+    def get(self, request):
+        try:
+            # Check if Apple Sign In is configured
+            if not all([
+                settings.APPLE_CLIENT_ID,
+                settings.APPLE_TEAM_ID,
+                settings.APPLE_KEY_ID,
+                settings.APPLE_PRIVATE_KEY
+            ]):
+                return Response(
+                    {'error': 'Apple Sign In not configured on server'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Generate a random state for CSRF protection
+            state = secrets.token_urlsafe(32)
+            request.session['apple_oauth_state'] = state
+            
+            # Get Apple authorization URL
+            auth_url = AppleOAuthService.get_authorization_url(state=state)
+            
+            # Return the URL instead of redirecting (for API usage)
+            return Response({
+                'authorization_url': auth_url,
+                'message': 'Redirect to the authorization_url to complete Apple Sign In'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error initiating Apple Sign In: {e}")
+            return Response(
+                {'error': 'Failed to initiate Apple Sign In'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class AppleOAuthCallbackView(APIView):
+    """
+    Handle Apple Sign In callback and complete authentication
+    """
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Handle Apple Sign In callback and authenticate user",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['code', 'id_token'],
+            properties={
+                'code': openapi.Schema(type=openapi.TYPE_STRING, description="Authorization code from Apple"),
+                'id_token': openapi.Schema(type=openapi.TYPE_STRING, description="ID token from Apple"),
+                'state': openapi.Schema(type=openapi.TYPE_STRING, description="State parameter for CSRF protection"),
+                'user': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'name': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'firstName': openapi.Schema(type=openapi.TYPE_STRING),
+                                'lastName': openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        ),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Apple authentication successful",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Success message'),
+                        'user': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'is_apple_user': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                            }
+                        ),
+                        'created': openapi.Schema(type=openapi.TYPE_BOOLEAN, description='True if new user was created')
+                    }
+                )
+            ),
+            400: "Bad Request - Invalid or missing parameters",
+            401: "Authentication failed",
+            500: "Internal server error"
+        }
+    )
+    def post(self, request):
+        try:
+            # Get code, id_token and state from request data
+            code = request.data.get('code')
+            id_token = request.data.get('id_token')
+            state = request.data.get('state')
+            
+            if not code or not id_token:
+                return Response(
+                    {'error': 'Authorization code and ID token are required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Verify state parameter (CSRF protection)
+            stored_state = request.session.get('apple_oauth_state')
+            if state and stored_state and state != stored_state:
+                return Response(
+                    {'error': 'Invalid state parameter'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Clear the state from session
+            request.session.pop('apple_oauth_state', None)
+            
+            # Get user data from ID token
+            apple_user_data = AppleOAuthService.get_user_data(id_token)
+            if not apple_user_data:
+                return Response(
+                    {'error': 'Failed to get user data from Apple'}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # Check if email is available
+            if not apple_user_data.get('email'):
+                return Response(
+                    {'error': 'Apple account must have an email address'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            email = apple_user_data['email']
+            apple_id = apple_user_data['apple_id']
+            
+            user_created = False
+            
+            with transaction.atomic():
+                # Check if user exists by email or Apple ID
+                user = None
+                try:
+                    # First try to find by Apple ID
+                    user = User.objects.get(apple_id=apple_id)
+                    logger.info(f"Found existing user by Apple ID: {apple_id}")
+                except User.DoesNotExist:
+                    try:
+                        # Then try to find by email
+                        user = User.objects.get(email=email)
+                        logger.info(f"Found existing user by email: {email}")
+                        
+                        # Update existing user with Apple info
+                        user.apple_id = apple_id
+                        user.is_apple_user = True
+                        user.save()
+                        
+                    except User.DoesNotExist:
+                        # Create new user
+                        user_data = AppleOAuthService.parse_user_for_registration(apple_user_data)
+                        
+                        user = User.objects.create_user(
+                            email=user_data['email'],
+                            first_name=user_data['first_name'],
+                            last_name=user_data['last_name'],
+                            apple_id=user_data['apple_id'],
+                            is_apple_user=user_data['is_apple_user'],
+                            is_active=user_data['is_active']
+                        )
+                        user_created = True
+                        logger.info(f"Created new Apple user: {email}")
+            
+            # Generate JWT tokens
+            tokens = get_tokens_for_user(user)
+            
+            # Prepare response data
+            response_data = {
+                'message': 'Apple authentication successful',
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'is_apple_user': user.is_apple_user
+                },
+                'created': user_created
+            }
+            
+            response = Response(response_data, status=status.HTTP_200_OK)
+            return set_auth_cookies(response, tokens)
+            
+        except Exception as e:
+            logger.error(f"Error in Apple Sign In callback: {e}")
+            return Response(
+                {'error': 'Apple authentication failed'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class AppleSignInTestView(APIView):
+    """
+    Test endpoint to simulate Apple Sign In flow without needing an Apple ID
+    """
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_description="Test Apple Sign In flow with mock data",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email', description='Test user email'),
+                'first_name': openapi.Schema(type=openapi.TYPE_STRING, description='Test user first name'),
+                'last_name': openapi.Schema(type=openapi.TYPE_STRING, description='Test user last name')
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Test authentication successful",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'user': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'is_apple_user': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                            }
+                        ),
+                        'created': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                    }
+                )
+            )
+        }
+    )
+    def post(self, request):
+        try:
+            # Get test user data
+            email = request.data.get('email')
+            first_name = request.data.get('first_name', 'Test')
+            last_name = request.data.get('last_name', 'User')
+            
+            if not email:
+                return Response(
+                    {'error': 'Email is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Generate a mock Apple ID
+            apple_id = f"mock_apple_{email.split('@')[0]}"
+            
+            user_created = False
+            
+            with transaction.atomic():
+                # Check if user exists
+                user = None
+                try:
+                    # First try to find by Apple ID
+                    user = User.objects.get(apple_id=apple_id)
+                    logger.info(f"Found existing test user by Apple ID: {apple_id}")
+                except User.DoesNotExist:
+                    try:
+                        # Then try to find by email
+                        user = User.objects.get(email=email)
+                        logger.info(f"Found existing test user by email: {email}")
+                        
+                        # Update existing user with Apple info
+                        user.apple_id = apple_id
+                        user.is_apple_user = True
+                        user.save()
+                        
+                    except User.DoesNotExist:
+                        # Create new user
+                        user = User.objects.create_user(
+                            email=email,
+                            first_name=first_name,
+                            last_name=last_name,
+                            apple_id=apple_id,
+                            is_apple_user=True,
+                            is_active=True
+                        )
+                        user_created = True
+                        logger.info(f"Created new test Apple user: {email}")
+            
+            # Generate JWT tokens
+            tokens = get_tokens_for_user(user)
+            
+            # Prepare response data
+            response_data = {
+                'message': 'Test Apple authentication successful',
+                'user': {
+                    'id': user.id,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'is_apple_user': user.is_apple_user
+                },
+                'created': user_created
+            }
+            
+            response = Response(response_data, status=status.HTTP_200_OK)
+            return set_auth_cookies(response, tokens)
+            
+        except Exception as e:
+            logger.error(f"Error in test Apple Sign In: {e}")
+            return Response(
+                {'error': 'Test authentication failed'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

@@ -43,6 +43,10 @@ class User(AbstractUser):
     github_avatar_url = models.URLField(null=True, blank=True)
     is_github_user = models.BooleanField(default=False)
 
+    # Apple Sign In fields
+    apple_id = models.CharField(max_length=100, null=True, blank=True, unique=True)
+    is_apple_user = models.BooleanField(default=False)
+
     objects = UserManager()
 
     USERNAME_FIELD = 'email'
