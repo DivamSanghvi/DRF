@@ -83,5 +83,5 @@ class MessageSerializer(serializers.ModelSerializer):
 class ResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
-        fields = ('id', 'user', 'project', 'pdf_file', 'created_at')
-        read_only_fields = ('user', 'created_at') 
+        fields = ('id', 'user', 'project', 'pdf_file', 'created_at', 'status')
+        read_only_fields = ('user', 'created_at', 'status') 

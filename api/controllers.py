@@ -114,7 +114,7 @@ def chat(message, project_id=None, stream=False):
             if stream:
                 def generate_error():
                     yield f"data: Error: {error_msg}\n\n"
-                return StreamingHttpResponse(generate_error(), content_type='text/event-stream')
+                return generate_error()
             return f"Error: {error_msg}"
 
         # Configure Gemini API
@@ -164,7 +164,7 @@ Please note that I don't have access to any specific documents to reference. I'l
             if stream:
                 def generate_error():
                     yield f"data: Error: {error_msg}\n\n"
-                return StreamingHttpResponse(generate_error(), content_type='text/event-stream')
+                return generate_error()
             return f"Error: {error_msg}"
 
         # Generate response with retry logic
@@ -173,7 +173,10 @@ Please note that I don't have access to any specific documents to reference. I'l
         
         for attempt in range(max_retries):
             try:
-                response = model.generate_content(message)
+                if stream:
+                    response = model.generate_content(message, stream=True)
+                else:
+                    response = model.generate_content(message)
                 if response:
                     break
             except Exception as e:
@@ -187,27 +190,16 @@ Please note that I don't have access to any specific documents to reference. I'l
         if stream:
             def generate():
                 try:
-                    if isinstance(response, str):
-                        yield f"data: {response}\n\n"
-                    elif isinstance(response, bytes):
-                        yield f"data: {response.decode('utf-8')}\n\n"
-                    elif hasattr(response, 'text'):
-                        yield f"data: {response.text}\n\n"
-                    elif hasattr(response, 'parts'):
-                        for part in response.parts:
-                            if isinstance(part, bytes):
-                                yield f"data: {part.decode('utf-8')}\n\n"
-                            elif hasattr(part, 'text'):
-                                yield f"data: {part.text}\n\n"
-                            else:
-                                yield f"data: {str(part)}\n\n"
-                    else:
-                        yield f"data: {str(response)}\n\n"
+                    for chunk in response:
+                        if hasattr(chunk, 'text'):
+                            yield f"data: {chunk.text}\n\n"
+                        else:
+                            yield f"data: {str(chunk)}\n\n"
                 except Exception as e:
                     error_msg = f"Error in streaming response: {str(e)}"
                     logger.error(error_msg)
                     yield f"data: Error: {error_msg}\n\n"
-            return StreamingHttpResponse(generate(), content_type='text/event-stream')
+            return generate()
         else:
             try:
                 if isinstance(response, str):
@@ -239,5 +231,5 @@ Please note that I don't have access to any specific documents to reference. I'l
         if stream:
             def generate_error():
                 yield f"data: Error: {error_msg}\n\n"
-            return StreamingHttpResponse(generate_error(), content_type='text/event-stream')
+            return generate_error()
         return f"Error: {error_msg}" 

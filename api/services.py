@@ -187,7 +187,7 @@ class PDFProcessor:
                 if os.path.exists(os.path.join(project_dir, "index.faiss")):
                     try:
                         # Load from disk
-                        self.vector_stores[project_id] = FAISS.load_local(project_dir, self.embeddings)
+                        self.vector_stores[project_id] = FAISS.load_local(project_dir, self.embeddings, allow_dangerous_deserialization=True)
                         logger.info(f"Loaded vector store for project {project_id} from disk")
                     except Exception as e:
                         logger.error(f"Error loading vector store from disk: {str(e)}")

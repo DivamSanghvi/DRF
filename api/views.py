@@ -23,6 +23,7 @@ from django.db import transaction
 import secrets
 import os
 from .apple_oauth import AppleOAuthService
+from .tasks import process_pdf_task, process_multiple_pdfs_task
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -1176,14 +1177,14 @@ class ProjectChatView(APIView):
         if should_stream:
             def event_stream():
                 try:
-                    # Get AI response first
-                    ai_response_content = chat(user_message_content, stream=False, project_id=project_id)
+                    # Get AI response with streaming enabled
+                    response_generator = chat(user_message_content, stream=True, project_id=project_id)
                     
                     # Create single conversation record with both user and assistant content
                     conversation = Message.objects.create(
                         project=project,
                         user_content=user_message_content,
-                        assistant_content=ai_response_content
+                        assistant_content=""  # Will be updated after streaming
                     )
                     
                     # Check if this is the first conversation and project name is auto-generated
@@ -1192,35 +1193,27 @@ class ProjectChatView(APIView):
                         try:
                             # Generate new project name based on first conversation
                             old_name = project.name
-                            new_name = generate_project_name(user_message_content, ai_response_content)
+                            new_name = generate_project_name(user_message_content, "")
                             project.name = new_name
                             project.save()
                             logger.info(f"Auto-renamed project {project.id} from '{old_name}' to '{new_name}'")
                         except Exception as e:
                             logger.error(f"Failed to auto-rename project {project.id}: {str(e)}")
                     
-                    # Stream the AI response in chunks for better UX
-                    full_response = ai_response_content
-                    current_sentence = ''
-                    
-<<<<<<< Updated upstream
-                    # Split response into sentences for streaming
-                    sentences = []
-                    temp_sentence = ''
-                    for char in full_response:
-                        temp_sentence += char
-                        if char in ['.', '!', '?', '\n']:
-                            if temp_sentence.strip():
-                                sentences.append(temp_sentence)
-                            temp_sentence = ''
-                    if temp_sentence.strip():
-                        sentences.append(temp_sentence)
-                    
-                    # Stream each sentence with delay
-                    for sentence in sentences:
-                        if sentence.strip():
+                    # Stream the AI response
+                    for chunk in response_generator:
+                        # Handle both bytes and string chunks
+                        if isinstance(chunk, bytes):
+                            chunk = chunk.decode('utf-8')
+                        
+                        # Remove 'data: ' prefix if present
+                        if isinstance(chunk, str) and chunk.startswith('data: '):
+                            chunk = chunk[6:]
+                        
+                        if chunk.strip():
+                            # Create the response object
                             response_data = {
-                                "message": sentence.strip(),
+                                "message": chunk.strip(),
                                 "role": "Pi",
                                 "user_id": None,
                                 "user_name": None,
@@ -1234,94 +1227,12 @@ class ProjectChatView(APIView):
                                 "model_choice": "Pi-LLM"
                             }
                             
+                            # Send the chunk as an SSE
                             yield f"data: {json.dumps(response_data)}\n\n"
-                            
-                            import time
-                            time.sleep(0.1)  # 100ms delay for natural typing effect
-                    
-                    # Send final completion message
-                    conversation_serializer = MessageSerializer(conversation)
-                    final_response = {
-                        "message": ai_response_content,
-=======
-                    for chunk in stream:
-                        if hasattr(chunk, 'text'):
-                            chunk_text = chunk.text
-                        else:
-                            chunk_text = str(chunk)
-                            
-                        if chunk_text:
-                            # Clean up the chunk text
-                            chunk_text = chunk_text.replace('\\n', '\n').replace('\\"', '"')
-                            
-                            # Add to current sentence
-                            current_sentence += chunk_text
-                            
-                            # Check if we have a complete sentence or punctuation
-                            if any(p in current_sentence for p in ['.', '!', '?', '\n']):
-                                # Split on punctuation
-                                parts = []
-                                temp = ''
-                                for char in current_sentence:
-                                    temp += char
-                                    if char in ['.', '!', '?', '\n']:
-                                        parts.append(temp)
-                                        temp = ''
-                                if temp:
-                                    parts.append(temp)
-                                
-                                # Send each part with a small delay
-                                for part in parts:
-                                    if part.strip():
-                                        # Create the response object
-                                        response_data = {
-                                            "message": part.strip(),
-                                            "role": "Pi",
-                                            "user_id": None,
-                                            "user_name": None,
-                                            "profile_url": None,
-                                            "profile_picture": None,
-                                            "conv_id": project.id,
-                                            "timestamp": datetime.now().isoformat(),
-                                            "status": "Start",
-                                            "conv_type": "llm_conversation",
-                                            "file_data": None,
-                                            "model_choice": "Pi-LLM"
-                                        }
-                                        
-                                        # Send the chunk as an SSE with proper formatting
-                                        yield f"data: {json.dumps(response_data)}\n\n"
-                                        
-                                        # Add a small delay to simulate typing
-                                        import time
-                                        time.sleep(0.1)  # 100ms delay for more natural typing
-                                
-                                current_sentence = temp
-                    
-                    # Send any remaining text
-                    if current_sentence.strip():
-                        # Create the response object for remaining text
-                        response_data = {
-                            "message": current_sentence.strip(),
-                            "role": "Pi",
-                            "user_id": None,
-                            "user_name": None,
-                            "profile_url": None,
-                            "profile_picture": None,
-                            "conv_id": project.id,
-                            "timestamp": datetime.now().isoformat(),
-                            "status": "Start",
-                            "conv_type": "llm_conversation",
-                            "file_data": None,
-                            "model_choice": "Pi-LLM"
-                        }
-                        
-                        yield f"data: {json.dumps(response_data)}\n\n"
                     
                     # Send the final message with status Complete
                     final_response = {
                         "message": "",
->>>>>>> Stashed changes
                         "role": "Pi",
                         "user_id": None,
                         "user_name": None,
@@ -1334,7 +1245,7 @@ class ProjectChatView(APIView):
                         "file_data": None,
                         "model_choice": "Pi-LLM"
                     }
-                    yield f"data: {json.dumps({'done': True, 'conversation': conversation_serializer.data, 'message': final_response})}\n\n"
+                    yield f"data: {json.dumps(final_response)}\n\n"
                     
                 except Exception as e:
                     logger.error(f"Error in streaming response: {e}")
@@ -1465,7 +1376,7 @@ class ResourceAddView(APIView):
 
         # Create resources for each PDF
         created_resources = []
-        all_docs = []
+        resource_ids = []
         
         for pdf_file in uploaded_files:
             # Save the PDF file
@@ -1475,22 +1386,19 @@ class ResourceAddView(APIView):
                 pdf_file=pdf_file
             )
             created_resources.append(resource)
-            
-            # Process the PDF and get documents
-            pdf_path = resource.pdf_file.path
-            docs = pdf_processor.process_pdf(pdf_path)
-            if docs:
-                all_docs.extend(docs)
+            resource_ids.append(resource.id)
         
-        # Create or update vector store for the project
-        if all_docs:
-            pdf_processor.save_or_update_vector_store(all_docs, project_id)
+        # Trigger Celery task for PDF processing
+        if len(resource_ids) == 1:
+            process_pdf_task.delay(resource_ids[0])
+        else:
+            process_multiple_pdfs_task.delay(resource_ids)
         
         # Serialize all created resources
         serializer = ResourceSerializer(created_resources, many=True)
         
         return Response({
-            'message': f'Successfully uploaded and processed {len(created_resources)} PDF(s)',
+            'message': f'Successfully uploaded {len(created_resources)} PDF(s). Processing started in background.',
             'resources': serializer.data
         }, status=status.HTTP_201_CREATED)
 

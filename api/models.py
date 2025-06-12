@@ -79,6 +79,13 @@ class Resource(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='resources')
     pdf_file = models.FileField(upload_to='resources/pdfs/', help_text="PDF file for RAG functionality")
     created_at = models.DateTimeField(auto_now_add=True)
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('complete', 'Complete'),
+        ('failed', 'Failed'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
     def __str__(self):
         return f"Resource {self.id} - {self.project.name}"

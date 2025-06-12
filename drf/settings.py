@@ -218,3 +218,24 @@ APPLE_REDIRECT_URI = os.getenv('APPLE_REDIRECT_URI', 'http://localhost:8000/api/
 # Ensure GitHub OAuth settings are configured
 if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
     print("Warning: GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET in your .env file.")
+
+# Celery Configuration
+CELERY_BROKER_URL = 'sqla+sqlite:///celery.sqlite'
+CELERY_RESULT_BACKEND = 'db+sqlite:///celery.sqlite'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# Create required directories
+os.makedirs('./celery/data_in', exist_ok=True)
+os.makedirs('./celery/data_out', exist_ok=True)
+os.makedirs('./celery/processed', exist_ok=True)
+
+# Celery Beat Settings
+CELERY_BEAT_SCHEDULE = {
+    'process-pending-pdfs': {
+        'task': 'api.tasks.process_multiple_pdfs_task',
+        'schedule': 300.0,  # Run every 5 minutes
+    },
+}
