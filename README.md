@@ -131,15 +131,29 @@ The API documentation is available at:
 | Method | Endpoint | Description | Authentication Required | Request Body | Celery Task |
 |--------|----------|-------------|------------------------|--------------|-------------|
 | POST | `/api/projects/<project_id>/resources/add/` | Upload PDF files to project (async processing) | Yes | Form-data with `pdf_files` field(s) | `process_pdf_task` or `process_multiple_pdfs_task` |
-| GET | `/api/projects/<project_id>/resources/` | List project's PDF resources with status | Yes | None | - |
-| GET | `/api/projects/<project_id>/resources/<resource_id>/` | Get specific resource details with processing status | Yes | None | - |
+| GET | `/api/projects/<project_id>/resources/` | List all PDF resources for a project with status | Yes | None | - |
+| GET | `/api/projects/<project_id>/resources/<resource_id>/` | Get specific resource details including processing status | Yes | None | - |
+| PATCH | `/api/projects/<project_id>/resources/<resource_id>/` | Update resource metadata | Yes | `{"name": "New Name", "description": "New Description"}` | - |
 | DELETE | `/api/projects/<project_id>/resources/<resource_id>/` | Delete resource and update vector store | Yes | None | - |
 
 **Resource Status Tracking:**
-- `pending`: Resource uploaded, waiting for processing
-- `processing`: Celery is currently processing the PDF
-- `complete`: PDF processed successfully and added to vector store
+Each resource includes a `status` field in responses:
+- `pending`: Resource uploaded, waiting for Celery processing
+- `processing`: Celery worker is currently processing the PDF
+- `complete`: PDF processed successfully and added to vector store for RAG
 - `failed`: Processing failed (e.g., corrupted PDF, OCR failure)
+
+**Example Response (GET `/api/projects/1/resources/5/`):**
+```json
+{
+    "id": 5,
+    "user": 1,
+    "project": 1,
+    "pdf_file": "/media/resources/pdfs/document.pdf",
+    "created_at": "2024-01-01T12:00:00Z",
+    "status": "complete"
+}
+```
 
 ### Optimized Message Structure
 
