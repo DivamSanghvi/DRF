@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from .models import Greeting, Project, Message, Resource
-from .controllers import get_greeting, chat
+from .controllers import get_greeting, chat, generate_project_name
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import authenticate, get_user_model
@@ -567,9 +567,8 @@ class ProjectCreateView(APIView):
         operation_description="Create a new project",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['name'],
             properties={
-                'name': openapi.Schema(type=openapi.TYPE_STRING, description='Project name')
+                'name': openapi.Schema(type=openapi.TYPE_STRING, description='Project name (optional - will auto-generate "Untitled1", "Untitled2", etc. if not provided)')
             }
         ),
         responses={
@@ -1157,6 +1156,19 @@ class ProjectChatView(APIView):
                         assistant_content=ai_response_content
                     )
                     
+                    # Check if this is the first conversation and project name is auto-generated
+                    existing_messages_count = Message.objects.filter(project=project).count()
+                    if existing_messages_count == 1 and project.name.startswith('Untitled'):
+                        try:
+                            # Generate new project name based on first conversation
+                            old_name = project.name
+                            new_name = generate_project_name(user_message_content, ai_response_content)
+                            project.name = new_name
+                            project.save()
+                            logger.info(f"Auto-renamed project {project.id} from '{old_name}' to '{new_name}'")
+                        except Exception as e:
+                            logger.error(f"Failed to auto-rename project {project.id}: {str(e)}")
+                    
                     # Stream the AI response in chunks for better UX
                     full_response = ai_response_content
                     current_sentence = ''
@@ -1254,6 +1266,18 @@ class ProjectChatView(APIView):
                 user_content=user_message_content,
                 assistant_content=ai_response_content
             )
+            
+            # Check if this is the first conversation and project name is auto-generated
+            existing_messages_count = Message.objects.filter(project=project).count()
+            if existing_messages_count == 1 and project.name.startswith('Untitled'):
+                try:
+                    # Generate new project name based on first conversation
+                    new_name = generate_project_name(user_message_content, ai_response_content)
+                    project.name = new_name
+                    project.save()
+                    logger.info(f"Auto-renamed project {project.id} from 'Untitled*' to '{new_name}'")
+                except Exception as e:
+                    logger.error(f"Failed to auto-rename project {project.id}: {str(e)}")
 
             conversation_serializer = MessageSerializer(conversation)
 

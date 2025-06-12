@@ -22,6 +22,88 @@ logger = logging.getLogger(__name__)
 def get_greeting(name):
     return f"Hello, {name}! Welcome to the DRF MVC project."
 
+def generate_project_name(user_message, assistant_message):
+    """
+    Generate a 2-4 word project name based on the first conversation.
+    
+    Args:
+        user_message (str): The user's first message
+        assistant_message (str): The assistant's response
+        
+    Returns:
+        str: A 2-4 word project name
+    """
+    try:
+        # Verify API key
+        api_key = os.getenv('GEMINI_API_KEY')
+        if not api_key:
+            logger.error("Gemini API key not found for project naming.")
+            return "Untitled Project"
+
+        # Configure Gemini API
+        genai.configure(api_key=api_key)
+        
+        # Create a prompt for generating project name
+        prompt = f"""Based on the following conversation between a user and an AI assistant, suggest a concise and relevant project name that captures the main topic or purpose of the discussion.
+
+User message: "{user_message}"
+
+Assistant response: "{assistant_message}"
+
+Requirements:
+- Return ONLY the project name, nothing else
+- The name must be strictly 2-4 words, not less not more
+- Make it descriptive and relevant to the conversation topic
+- Understand the context and make sure that the project name is such that it covers the main context of discussion
+- Do not include quotes or extra text
+- Use title case (capitalize each word)
+
+Project name:"""
+
+        # Initialize the model
+        models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        model = None
+        
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name)
+                break
+            except Exception as e:
+                logger.warning(f"Failed to initialize {model_name}: {str(e)}")
+                continue
+
+        if not model:
+            logger.error("Failed to initialize any model for project naming.")
+            return "Untitled Project"
+
+        # Generate the project name
+        try:
+            response = model.generate_content(prompt)
+            if response and hasattr(response, 'text'):
+                suggested_name = response.text.strip()
+                
+                # Basic validation: ensure it's 2-4 words
+                words = suggested_name.split()
+                if 2 <= len(words) <= 4:
+                    return suggested_name
+                elif len(words) > 4:
+                    # Take first 4 words if too long
+                    return " ".join(words[:4])
+                else:
+                    # If too short, return a default
+                    return "Project Discussion"
+            else:
+                logger.warning("No text response received for project naming.")
+                return "Project Discussion"
+                
+        except Exception as e:
+            logger.error(f"Error generating project name: {str(e)}")
+            return "Project Discussion"
+            
+    except Exception as e:
+        logger.error(f"Error in generate_project_name: {str(e)}")
+        return "Project Discussion"
+
 def chat(message, project_id=None, stream=False):
     try:
         # Verify API key

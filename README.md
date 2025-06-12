@@ -12,6 +12,7 @@ A Django REST Framework project that implements a Model-View-Controller (MVC) ar
 
 - **Project Management**
   - Create, read, update, and delete projects
+  - Smart auto-naming: projects without names get auto-generated names, then AI-powered renaming after first conversation
   - Project-specific chat conversations
   - Message history tracking
 
@@ -104,10 +105,12 @@ The API documentation is available at:
 #### Project Management Endpoints
 | Method | Endpoint | Description | Authentication Required | Request Body |
 |--------|----------|-------------|------------------------|--------------|
-| POST | `/api/projects/create/` | Create new project | Yes | `{"name": "My Project"}` |
+| POST | `/api/projects/create/` | Create new project (name optional) | Yes | `{"name": "My Project"}` or `{}` |
 | GET | `/api/projects/` | List user's projects | Yes | None |
 | PUT | `/api/projects/<project_id>/update/` | Update project details | Yes | `{"name": "Updated Project Name"}` |
 | DELETE | `/api/projects/<project_id>/delete/` | Delete project | Yes | None |
+
+**Smart Project Naming**: When creating a project without a name, it auto-generates names like "Untitled1", "Untitled2", etc. After the first conversation in an untitled project, the system uses AI to automatically rename the project based on the conversation content (2-4 words, e.g., "React App Development").
 
 #### Resource (PDF) Management Endpoints
 | Method | Endpoint | Description | Authentication Required | Request Body |
