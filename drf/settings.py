@@ -208,6 +208,12 @@ GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
 GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
 GITHUB_REDIRECT_URI = os.getenv('GITHUB_REDIRECT_URI', 'http://localhost:8000/api/auth/github/callback/')
 
+# Debug logging for GitHub OAuth settings
+print("GitHub OAuth Settings:")
+print(f"GITHUB_CLIENT_ID: {GITHUB_CLIENT_ID}")
+print(f"GITHUB_CLIENT_SECRET: {GITHUB_CLIENT_SECRET}")
+print(f"GITHUB_REDIRECT_URI: {GITHUB_REDIRECT_URI}")
+
 # Apple Sign In Settings
 APPLE_CLIENT_ID = os.getenv('APPLE_CLIENT_ID')
 APPLE_TEAM_ID = os.getenv('APPLE_TEAM_ID')

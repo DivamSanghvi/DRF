@@ -165,7 +165,7 @@ class GitHubOAuthService:
             dict: Parsed data for user creation
         """
         # Split name into first and last name
-        name = github_user_data.get('name', '').strip()
+        name = (github_user_data.get('name') or '').strip()
         first_name = ''
         last_name = ''
         
