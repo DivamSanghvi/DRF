@@ -627,6 +627,35 @@ class ProjectListView(APIView):
         serializer = ProjectSerializer(projects, many=True)
         return Response(serializer.data)
 
+class ProjectDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Get details of a specific project",
+        responses={
+            200: openapi.Response(
+                description="Project details",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'user': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'created_at': openapi.Schema(type=openapi.TYPE_STRING, format='date-time')
+                    }
+                )
+            ),
+            404: "Project not found"
+        }
+    )
+    def get(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id, user=request.user)
+            serializer = ProjectSerializer(project)
+            return Response(serializer.data)
+        except Project.DoesNotExist:
+            return Response({'error': 'Project not found'}, status=status.HTTP_404_NOT_FOUND)
+
 class ProjectUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 

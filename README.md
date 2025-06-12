@@ -107,6 +107,7 @@ The API documentation is available at:
 |--------|----------|-------------|------------------------|--------------|
 | POST | `/api/projects/create/` | Create new project (name optional) | Yes | `{"name": "My Project"}` or `{}` |
 | GET | `/api/projects/` | List user's projects | Yes | None |
+| GET | `/api/projects/<project_id>/` | Get specific project details | Yes | None |
 | PUT | `/api/projects/<project_id>/update/` | Update project details | Yes | `{"name": "Updated Project Name"}` |
 | DELETE | `/api/projects/<project_id>/delete/` | Delete project | Yes | None |
 
