@@ -50,15 +50,18 @@ User message: "{user_message}"
 
 Assistant response: "{assistant_message}"
 
-Requirements:
+CRITICAL REQUIREMENTS:
 - Return ONLY the project name, nothing else
-- The name must be strictly 2-4 words, not less not more
+- The name must be EXACTLY 2-4 SEPARATE words with spaces between them
+- DO NOT create compound words like "DjangoVsNode" - use separate words like "Django Node Comparison"
+- DO NOT use camelCase or concatenated words
+- Each word must be separated by a single space
 - Make it descriptive and relevant to the conversation topic
-- Understand the context and make sure that the project name is such that it covers the main context of discussion
-- Do not include quotes or extra text
 - Use title case (capitalize each word)
+- Examples of GOOD names: "Web Framework Comparison", "Math Concepts Overview", "Python Django Guide"
+- Examples of BAD names: "WebFrameworkComparison", "DjangoVsNode", "PythonGuide"
 
-Project name:"""
+Generate a project name with exactly 2-4 separate words:"""
 
         # Initialize the model
         models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
@@ -84,11 +87,33 @@ Project name:"""
                 
                 # Basic validation: ensure it's 2-4 words
                 words = suggested_name.split()
+                
                 if 2 <= len(words) <= 4:
                     return suggested_name
                 elif len(words) > 4:
                     # Take first 4 words if too long
-                    return " ".join(words[:4])
+                    truncated_name = " ".join(words[:4])
+                    return truncated_name
+                elif len(words) == 1:
+                    # Try to fix compound words by adding intelligent spacing
+                    single_word = words[0]
+                    
+                    # Try to split common patterns (camelCase, common separators)
+                    import re
+                    # Split on capital letters (camelCase) but keep the capitals
+                    split_attempt = re.sub(r'([a-z])([A-Z])', r'\1 \2', single_word)
+                    # Split on common patterns like "Vs", "And", etc.
+                    split_attempt = re.sub(r'(Vs|And|Or|To|From)', r' \1 ', split_attempt)
+                    # Clean up multiple spaces
+                    split_attempt = re.sub(r'\s+', ' ', split_attempt).strip()
+                    
+                    new_words = split_attempt.split()
+                    
+                    if 2 <= len(new_words) <= 4:
+                        return split_attempt
+                    else:
+                        # If still can't fix it, try a simple fallback
+                        return "Project Discussion"
                 else:
                     # If too short, return a default
                     return "Project Discussion"

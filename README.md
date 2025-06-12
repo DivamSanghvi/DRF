@@ -23,6 +23,12 @@ A Django REST Framework project that implements a Model-View-Controller (MVC) ar
   - Vector store creation using FAISS
   - Ensemble retrieval combining FAISS and BM25
 
+- **Celery Background Processing**
+  - Asynchronous PDF processing with Celery
+  - Real-time status tracking (pending, processing, complete, failed)
+  - Parallel processing of multiple PDF files
+  - Automatic retry mechanisms for failed tasks
+
 - **Chat Interface**
   - Real-time streaming responses
   - Context-aware responses using PDF content
@@ -73,6 +79,14 @@ A Django REST Framework project that implements a Model-View-Controller (MVC) ar
    python manage.py runserver
    ```
 
+7. **Start Celery worker (for PDF processing)**
+   In a separate terminal, run:
+   ```bash
+   celery -A drf worker --loglevel=info --pool=solo
+   ```
+   
+   > **Note**: This command must be run in the background to enable asynchronous PDF processing. Without Celery running, PDF uploads will fail to process.
+
 ## API Documentation
 
 The API documentation is available at:
@@ -113,14 +127,19 @@ The API documentation is available at:
 
 **Smart Project Naming**: When creating a project without a name, it auto-generates names like "Untitled1", "Untitled2", etc. After the first conversation in an untitled project, the system uses AI to automatically rename the project based on the conversation content (2-4 words, e.g., "React App Development").
 
-#### Resource (PDF) Management Endpoints
-| Method | Endpoint | Description | Authentication Required | Request Body |
-|--------|----------|-------------|------------------------|--------------|
-| POST | `/api/projects/<project_id>/resources/add/` | Upload PDF files to project | Yes | Form-data with `pdf_file` field(s) |
-| GET | `/api/projects/<project_id>/resources/` | List project's PDF resources | Yes | None |
-| GET | `/api/projects/<project_id>/resources/<resource_id>/` | Get specific resource details | Yes | None |
-| PATCH | `/api/projects/<project_id>/resources/<resource_id>/` | Update resource metadata | Yes | `{"metadata": "..."}` |
-| DELETE | `/api/projects/<project_id>/resources/<resource_id>/` | Delete resource | Yes | None |
+#### Resource (PDF) Management Endpoints (Celery-Powered)
+| Method | Endpoint | Description | Authentication Required | Request Body | Celery Task |
+|--------|----------|-------------|------------------------|--------------|-------------|
+| POST | `/api/projects/<project_id>/resources/add/` | Upload PDF files to project (async processing) | Yes | Form-data with `pdf_files` field(s) | `process_pdf_task` or `process_multiple_pdfs_task` |
+| GET | `/api/projects/<project_id>/resources/` | List project's PDF resources with status | Yes | None | - |
+| GET | `/api/projects/<project_id>/resources/<resource_id>/` | Get specific resource details with processing status | Yes | None | - |
+| DELETE | `/api/projects/<project_id>/resources/<resource_id>/` | Delete resource and update vector store | Yes | None | - |
+
+**Resource Status Tracking:**
+- `pending`: Resource uploaded, waiting for processing
+- `processing`: Celery is currently processing the PDF
+- `complete`: PDF processed successfully and added to vector store
+- `failed`: Processing failed (e.g., corrupted PDF, OCR failure)
 
 ### Optimized Message Structure
 
@@ -165,6 +184,42 @@ The API documentation is available at:
 | GET | `/redoc/` | ReDoc documentation | No |
 | GET | `/swagger.json` | OpenAPI JSON schema | No |
 | GET | `/swagger.yaml` | OpenAPI YAML schema | No |
+
+## Celery Background Processing
+
+This application uses **Celery** for asynchronous background processing of PDF files. When users upload PDFs, the heavy processing tasks (text extraction, OCR, vector store creation) are handled in the background without blocking the API response.
+
+### How It Works
+
+1. **PDF Upload**: User uploads PDF files via `/api/projects/<project_id>/resources/add/`
+2. **Immediate Response**: API returns immediately with resource records in `pending` status
+3. **Background Processing**: Celery workers pick up the tasks and process PDFs
+4. **Status Updates**: Resource status changes to `processing` → `complete` or `failed`
+5. **Vector Store Integration**: Completed PDFs are automatically added to the project's vector store for RAG
+
+### Celery Tasks
+
+- **`process_pdf_task(resource_id)`**: Processes a single PDF file
+- **`process_multiple_pdfs_task(resource_ids)`**: Processes multiple PDF files in parallel
+
+### Configuration
+
+Celery is configured to use SQLite as both broker and result backend for development:
+```python
+CELERY_BROKER_URL = 'sqla+sqlite:///celery.sqlite'
+CELERY_RESULT_BACKEND = 'db+sqlite:///celery.sqlite'
+```
+
+### Running Celery
+
+**Important**: You must run the Celery worker in a separate terminal for PDF processing to work:
+
+```bash
+# In your project directory (with virtual environment activated)
+celery -A drf worker --loglevel=info --pool=solo
+```
+
+**Production Note**: For production deployment, consider using Redis or RabbitMQ as the message broker and configure proper worker management.
 
 ## GitHub OAuth Setup & Testing
 

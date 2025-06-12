@@ -1187,18 +1187,8 @@ class ProjectChatView(APIView):
                         assistant_content=""  # Will be updated after streaming
                     )
                     
-                    # Check if this is the first conversation and project name is auto-generated
-                    existing_messages_count = Message.objects.filter(project=project).count()
-                    if existing_messages_count == 1 and project.name.startswith('Untitled'):
-                        try:
-                            # Generate new project name based on first conversation
-                            old_name = project.name
-                            new_name = generate_project_name(user_message_content, "")
-                            project.name = new_name
-                            project.save()
-                            logger.info(f"Auto-renamed project {project.id} from '{old_name}' to '{new_name}'")
-                        except Exception as e:
-                            logger.error(f"Failed to auto-rename project {project.id}: {str(e)}")
+                    # Collect the full response to save to database
+                    full_assistant_response = ""
                     
                     # Stream the AI response
                     for chunk in response_generator:
@@ -1210,10 +1200,16 @@ class ProjectChatView(APIView):
                         if isinstance(chunk, str) and chunk.startswith('data: '):
                             chunk = chunk[6:]
                         
-                        if chunk.strip():
+                        # Remove trailing newlines but preserve internal spacing
+                        chunk_content = chunk.rstrip('\n\r')
+                        
+                        if chunk_content.strip():
+                            # Add chunk to full response (preserve original spacing)
+                            full_assistant_response += chunk_content
+                            
                             # Create the response object
                             response_data = {
-                                "message": chunk.strip(),
+                                "message": chunk_content.strip(),
                                 "role": "Pi",
                                 "user_id": None,
                                 "user_name": None,
@@ -1229,6 +1225,29 @@ class ProjectChatView(APIView):
                             
                             # Send the chunk as an SSE
                             yield f"data: {json.dumps(response_data)}\n\n"
+                    
+                    # Save the complete assistant response to database (clean up any extra whitespace)
+                    conversation.assistant_content = full_assistant_response.strip()
+                    conversation.save()
+                    
+                    # Check if this is the first conversation and project name is auto-generated
+                    existing_messages_count = Message.objects.filter(project=project).count()
+                    logger.info(f"Project {project.id} - Message count: {existing_messages_count}, Name: '{project.name}'")
+                    
+                    if existing_messages_count == 1 and project.name.startswith('Untitled'):
+                        try:
+                            # Generate new project name based on first conversation
+                            old_name = project.name
+                            logger.info(f"About to generate project name for project {project.id}")
+                            logger.info(f"User message length: {len(user_message_content)}")
+                            logger.info(f"Assistant response length: {len(full_assistant_response)}")
+                            
+                            new_name = generate_project_name(user_message_content, full_assistant_response)
+                            project.name = new_name
+                            project.save()
+                            logger.info(f"Auto-renamed project {project.id} from '{old_name}' to '{new_name}'")
+                        except Exception as e:
+                            logger.error(f"Failed to auto-rename project {project.id}: {str(e)}")
                     
                     # Send the final message with status Complete
                     final_response = {
@@ -1290,9 +1309,15 @@ class ProjectChatView(APIView):
             
             # Check if this is the first conversation and project name is auto-generated
             existing_messages_count = Message.objects.filter(project=project).count()
+            logger.info(f"[NON-STREAMING] Project {project.id} - Message count: {existing_messages_count}, Name: '{project.name}'")
+            
             if existing_messages_count == 1 and project.name.startswith('Untitled'):
                 try:
                     # Generate new project name based on first conversation
+                    logger.info(f"[NON-STREAMING] About to generate project name for project {project.id}")
+                    logger.info(f"[NON-STREAMING] User message length: {len(user_message_content)}")
+                    logger.info(f"[NON-STREAMING] Assistant response length: {len(ai_response_content)}")
+                    
                     new_name = generate_project_name(user_message_content, ai_response_content)
                     project.name = new_name
                     project.save()
